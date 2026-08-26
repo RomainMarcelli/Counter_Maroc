@@ -29,6 +29,12 @@ export interface Participant extends EntityBase {
   avatarUrl: string | null;
   colorIndex: number;
   sortOrder: number;
+  /**
+   * Compte Supabase rattaché à ce participant. `null` tant que la personne n’a pas
+   * rejoint le séjour : quelqu’un peut ajouter « Lucas » avant que Lucas installe
+   * l’application. Seul le RPC `claim_participant` renseigne ce champ.
+   */
+  userId: string | null;
   /** Estimation d’alcoolémie — facultatif, désactivé tant que la personne ne l’active pas. */
   bacEnabled: boolean;
   weightKg: number | null;

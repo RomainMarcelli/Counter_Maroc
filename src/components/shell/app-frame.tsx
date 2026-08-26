@@ -3,6 +3,8 @@
 import { Settings } from "lucide-react";
 import { useState } from "react";
 import { useTrip } from "@/components/providers/trip-provider";
+import { useAuth } from "@/components/providers/auth-provider";
+import { AuthScreen } from "@/components/auth/auth-screen";
 import { Onboarding } from "@/components/onboarding/onboarding";
 import { BottomNav } from "./bottom-nav";
 import { SyncIndicator } from "./sync-indicator";
@@ -13,7 +15,12 @@ import { BrandLoader } from "@/components/brand/brand-loader";
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
   const { ready, trip, actorId, activeParticipants } = useTrip();
+  const { status } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Aucun écran de l’application n’apparaît avant de connaître l’état de session :
+  // pas de flash de contenu suivi d’une redirection vers la connexion.
+  if (status === "loading") return <BrandLoader />;
+  if (status === "unauthenticated") return <AuthScreen />;
   if (!ready) return <BrandLoader />;
   if (!trip) return <Onboarding />;
   if (!actorId || !activeParticipants.some((participant) => participant.id === actorId)) return <IdentityGate />;

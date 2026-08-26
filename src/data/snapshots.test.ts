@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "./database";
-import { addDrink, addDrinkRound, createTrip, refreshEntrySnapshots, updateDrink, updateDrinkEntry } from "./repository";
+import { addDrink, addDrinkRound, createTrip, getAuthorId, getMyParticipantId, refreshEntrySnapshots, updateDrink, updateDrinkEntry } from "./repository";
 import { calculatePureAlcoholGrams } from "@/domain/bac";
 
 async function freshTrip(): Promise<string> {
@@ -85,12 +85,28 @@ describe("snapshot d’alcool par consommation", () => {
 
   it("désigne par défaut celui qui saisit comme payeur", async () => {
     const tripId = await freshTrip();
-    const actor = (await db.settings.get("actorId"))?.value;
+    // Le payeur est un participant, pas un compte : c’est celui que le compte
+    // connecté incarne dans ce séjour — ici le créateur.
+    const me = await getMyParticipantId(tripId);
     const whisky = await drink(tripId, "Whisky");
     const batch = await addDrinkRound(tripId, ["romain", "lucas"], whisky.id);
 
+    expect(me).not.toBeNull();
     const entries = await db.drinkEntries.bulkGet(batch.drinkEntryIds);
-    expect(entries.every((entry) => entry?.paidBy === actor)).toBe(true);
+    expect(entries.every((entry) => entry?.paidBy === me)).toBe(true);
+  });
+
+  it("signe chaque verre avec le compte connecté, pas avec le buveur", async () => {
+    const tripId = await freshTrip();
+    const author = await getAuthorId();
+    const whisky = await drink(tripId, "Whisky");
+    const batch = await addDrinkRound(tripId, ["lucas"], whisky.id);
+
+    // `action_by = auth.uid()` est exigé par la policy d’insertion, alors que le
+    // participant peut être n’importe qui du séjour.
+    const entry = await db.drinkEntries.get(batch.drinkEntryIds[0]);
+    expect(entry?.actionBy).toBe(author);
+    expect(entry?.participantId).toBe("lucas");
   });
 
   it("horodate un verre saisi en retard à l’heure demandée", async () => {

@@ -15,7 +15,7 @@ enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://127.0.0.1:3000"]
 enable_signup = true
-enable_anonymous_sign_ins = true
+enable_anonymous_sign_ins = false
 
 [realtime]
 enabled = true

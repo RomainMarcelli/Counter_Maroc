@@ -8,7 +8,10 @@ import { createId, createShareCode } from "@/lib/id";
 
 const ACTIVE_TRIP_KEY = "activeTripId";
 const DEVICE_KEY = "deviceId";
-const ACTOR_KEY = "actorId";
+/** Compte connecté sur ce téléphone : auteur de toutes les actions locales. */
+const AUTH_USER_KEY = "authUserId";
+/** Dernier compte ayant possédé les données locales, pour la séparation par compte. */
+const LOCAL_OWNER_KEY = "localOwnerId";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -35,12 +38,60 @@ export async function getOrCreateDeviceId(): Promise<string> {
   return value;
 }
 
-export async function getActorId(): Promise<string> {
-  return (await db.settings.get(ACTOR_KEY))?.value ?? getOrCreateDeviceId();
+/**
+ * Auteur des actions locales. C’est le compte Supabase connecté : il part tel quel
+ * dans `action_by`, ce que la policy d’insertion exige. Sans compte (mode démo ou
+ * local pur), on retombe sur l’identifiant de l’appareil.
+ */
+export async function getAuthorId(): Promise<string> {
+  return (await db.settings.get(AUTH_USER_KEY))?.value ?? getOrCreateDeviceId();
 }
 
-export async function setActorId(value: string): Promise<void> {
-  await db.settings.put({ key: ACTOR_KEY, value });
+export async function setAuthUserId(value: string | null): Promise<void> {
+  if (value) await db.settings.put({ key: AUTH_USER_KEY, value });
+  else await db.settings.delete(AUTH_USER_KEY);
+}
+
+/** Le participant que le compte connecté incarne dans ce séjour, s’il en a choisi un. */
+export async function getMyParticipantId(tripId: string): Promise<string | null> {
+  const authorId = await getAuthorId();
+  const participants = await db.participants.where("tripId").equals(tripId).toArray();
+  return participants.find((participant) => participant.userId === authorId && !participant.deletedAt)?.id ?? null;
+}
+
+/**
+ * Séparation locale par compte : si un autre compte se connecte sur ce navigateur,
+ * les données du précédent ne doivent pas rester visibles. Se reconnecter avec le
+ * même compte ne touche à rien — la déconnexion seule n’efface jamais.
+ */
+export async function claimLocalData(userId: string): Promise<boolean> {
+  const previous = (await db.settings.get(LOCAL_OWNER_KEY))?.value ?? null;
+  if (previous === userId) return false;
+  if (previous) {
+    await db.transaction("rw", [db.trips, db.participants, db.drinks, db.drinkEntries, db.waterEntries, db.syncQueue], async () => {
+      await Promise.all([db.trips.clear(), db.participants.clear(), db.drinks.clear(), db.drinkEntries.clear(), db.waterEntries.clear(), db.syncQueue.clear()]);
+    });
+    await db.settings.delete(ACTIVE_TRIP_KEY);
+  }
+  await db.settings.put({ key: LOCAL_OWNER_KEY, value: userId });
+  return Boolean(previous);
+}
+
+/**
+ * Reflète localement le rattachement compte ↔ participant décidé par le RPC
+ * `claim_participant`. `user_id` ne transite jamais par la file de synchronisation :
+ * seul le serveur arbitre qui détient une identité.
+ */
+export async function linkParticipantToAccount(participant: Participant, userId: string): Promise<void> {
+  const siblings = await db.participants.where("tripId").equals(participant.tripId).toArray();
+  const released = siblings
+    .filter((item) => item.userId === userId && item.id !== participant.id)
+    .map((item) => ({ ...item, userId: null }));
+  // `updatedAt` n’est pas touché : ce champ arbitre les conflits de synchronisation,
+  // et le rattachement n’emprunte pas ce chemin. Le bousculer bloquerait une mise à
+  // jour légitime venue d’un autre téléphone.
+  await db.participants.bulkPut([...released, { ...participant, userId }]);
+  signalLocalChange();
 }
 
 export async function getActiveTripId(): Promise<string | null> {
@@ -60,7 +111,7 @@ export async function seedDemo(): Promise<string> {
     await db.drinkEntries.bulkPut(snapshot.drinkEntries);
     await db.waterEntries.bulkPut(snapshot.waterEntries);
     await db.settings.put({ key: ACTIVE_TRIP_KEY, value: snapshot.trip.id });
-    await db.settings.put({ key: ACTOR_KEY, value: snapshot.participants[0].id });
+    await db.settings.put({ key: AUTH_USER_KEY, value: snapshot.trip.createdBy });
   });
   return snapshot.trip.id;
 }
@@ -75,7 +126,7 @@ export async function bootstrapDemoIfEnabled(): Promise<string | null> {
 export async function createTrip(input: { name: string; startDate: string; endDate: string; creatorName: string }): Promise<string> {
   const timestamp = nowIso();
   const tripId = createId();
-  const deviceId = await getOrCreateDeviceId();
+  const authorId = await getAuthorId();
   const trip: Trip = {
     id: tripId,
     tripId,
@@ -84,7 +135,7 @@ export async function createTrip(input: { name: string; startDate: string; endDa
     startDate: input.startDate,
     endDate: input.endDate,
     timezone: TRIP_TIMEZONE,
-    createdBy: deviceId,
+    createdBy: authorId,
     createdAt: timestamp,
     updatedAt: timestamp,
     deletedAt: null,
@@ -96,6 +147,8 @@ export async function createTrip(input: { name: string; startDate: string; endDa
     avatarUrl: null,
     colorIndex: 0,
     sortOrder: 0,
+    // Le créateur incarne son propre participant dès la création.
+    userId: authorId,
     createdAt: timestamp,
     updatedAt: timestamp,
     deletedAt: null,
@@ -129,7 +182,6 @@ export async function createTrip(input: { name: string; startDate: string; endDa
       ...drinks.map((drink) => queueOperation("drink", drink)),
     ]);
     await db.settings.put({ key: ACTIVE_TRIP_KEY, value: tripId });
-    await db.settings.put({ key: ACTOR_KEY, value: participant.id });
   });
   signalLocalChange();
   return tripId;
@@ -139,6 +191,8 @@ export async function addParticipant(tripId: string, name: string, sortOrder: nu
   const timestamp = nowIso();
   const participant: Participant = {
     id: createId(), tripId, name: name.trim(), avatarUrl: null, colorIndex: sortOrder % 4, sortOrder, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+    // Un participant peut exister sans compte : il sera rattaché quand la personne rejoindra.
+    userId: null,
     bacEnabled: false, weightKg: null, distributionRatio: null, bacPrivate: false,
   };
   await putWithQueue("participant", participant);
@@ -227,14 +281,15 @@ export async function addDrinkRound(tripId: string, participantIds: string[], dr
   const timestamp = nowIso();
   const consumedIso = consumedAt ?? timestamp;
   const deviceId = await getOrCreateDeviceId();
-  const actionBy = await getActorId();
+  const actionBy = await getAuthorId();
+  const payer = await getMyParticipantId(tripId);
   const roundId = participantIds.length > 1 ? createId() : null;
   const snapshot = entrySnapshot(await db.drinks.get(drinkId));
   const entries: DrinkEntry[] = participantIds.map((participantId) => ({
     id: createId(), tripId, participantId, drinkId, consumedAt: consumedIso, actionBy, deviceId, roundId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
     ...snapshot,
     // Celui qui saisit la tournée est présumé l’avoir payée ; le Journal permet de corriger.
-    paidBy: actionBy,
+    paidBy: payer,
   }));
   await db.transaction("rw", db.drinkEntries, db.syncQueue, async () => {
     await db.drinkEntries.bulkPut(entries);
@@ -247,7 +302,7 @@ export async function addDrinkRound(tripId: string, participantIds: string[], dr
 export async function addWaterRound(tripId: string, participantIds: string[], consumedAt?: string): Promise<UndoBatch> {
   const timestamp = nowIso();
   const deviceId = await getOrCreateDeviceId();
-  const actionBy = await getActorId();
+  const actionBy = await getAuthorId();
   const roundId = participantIds.length > 1 ? createId() : null;
   const entries: WaterEntry[] = participantIds.map((participantId) => ({
     id: createId(), tripId, participantId, consumedAt: consumedAt ?? timestamp, actionBy, deviceId, roundId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,

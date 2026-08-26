@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/data/database";
 import { bootstrapDemoIfEnabled, getActiveTripId } from "@/data/repository";
 import { syncEngine } from "@/data/sync-engine";
+import { useAuth } from "./auth-provider";
 import type { Drink, DrinkEntry, Participant, SyncOperation, Trip, WaterEntry } from "@/domain/types";
 
 interface TripContextValue {
@@ -17,7 +18,10 @@ interface TripContextValue {
   drinkEntries: DrinkEntry[];
   waterEntries: WaterEntry[];
   queue: SyncOperation[];
+  /** Identifiant du participant que le compte connecté incarne dans ce séjour. */
   actorId: string | null;
+  /** Identifiant du compte connecté : c’est lui qui signe `actionBy`. */
+  authorId: string | null;
   selectedParticipantIds: string[];
   setSelectedParticipantIds: React.Dispatch<React.SetStateAction<string[]>>;
   refreshActiveTrip: () => Promise<void>;
@@ -26,6 +30,7 @@ interface TripContextValue {
 const TripContext = createContext<TripContextValue | null>(null);
 
 export function TripProvider({ children }: { children: React.ReactNode }) {
+  const { status } = useAuth();
   const [ready, setReady] = useState(false);
   const [activeTripId, setActiveTripIdState] = useState<string | null>(null);
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
@@ -35,34 +40,46 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const drinkEntries = useLiveQuery(() => (activeTripId ? db.drinkEntries.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
   const waterEntries = useLiveQuery(() => (activeTripId ? db.waterEntries.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
   const queue = useLiveQuery(() => (activeTripId ? db.syncQueue.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
-  const actorId = useLiveQuery(() => db.settings.get("actorId").then((setting) => setting?.value ?? null), [], null);
+  const authorId = useLiveQuery(() => db.settings.get("authUserId").then((setting) => setting?.value ?? null), [], null);
 
   const refreshActiveTrip = async () => setActiveTripIdState(await getActiveTripId());
 
+  // Le séjour local n’est lu qu’une fois la session connue : sans compte, il n’y a
+  // rien à ouvrir, et surtout rien à pousser.
   useEffect(() => {
+    if (status === "loading") return;
+    let cancelled = false;
     void bootstrapDemoIfEnabled().then(async () => {
+      if (cancelled) return;
       await refreshActiveTrip();
-      setReady(true);
+      if (!cancelled) setReady(true);
     });
-    syncEngine.start();
-    return () => syncEngine.stop();
-  }, []);
+    return () => { cancelled = true; };
+  }, [status]);
 
   useEffect(() => {
-    if (!activeTripId) return;
+    if (!activeTripId || status !== "authenticated") return;
     syncEngine.subscribe(activeTripId);
     void syncEngine.pullTrip(activeTripId).catch(() => undefined);
-  }, [activeTripId]);
+  }, [activeTripId, status, authorId]);
 
   const activeParticipants = useMemo(() => participants.filter((item) => !item.deletedAt), [participants]);
   const activeDrinks = useMemo(() => drinks.filter((item) => !item.deletedAt), [drinks]);
+  const actorId = useMemo(
+    () => (authorId ? activeParticipants.find((participant) => participant.userId === authorId)?.id ?? null : null),
+    [activeParticipants, authorId],
+  );
 
   useEffect(() => {
     setSelectedParticipantIds((current) => {
       const valid = current.filter((id) => activeParticipants.some((participant) => participant.id === id));
-      return valid.length ? valid : activeParticipants[0] ? [activeParticipants[0].id] : [];
+      if (valid.length) return valid;
+      // À l’ouverture, on présélectionne la personne qui tient le téléphone.
+      const mine = activeParticipants.find((participant) => participant.id === actorId);
+      const first = mine ?? activeParticipants[0];
+      return first ? [first.id] : [];
     });
-  }, [activeParticipants]);
+  }, [activeParticipants, actorId]);
 
   const value = useMemo<TripContextValue>(() => ({
     ready,
@@ -75,10 +92,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     waterEntries,
     queue,
     actorId,
+    authorId,
     selectedParticipantIds,
     setSelectedParticipantIds,
     refreshActiveTrip,
-  }), [ready, trip, participants, activeParticipants, drinks, activeDrinks, drinkEntries, waterEntries, queue, actorId, selectedParticipantIds]);
+  }), [ready, trip, participants, activeParticipants, drinks, activeDrinks, drinkEntries, waterEntries, queue, actorId, authorId, selectedParticipantIds]);
 
   return <TripContext.Provider value={value}>{children}</TripContext.Provider>;
 }

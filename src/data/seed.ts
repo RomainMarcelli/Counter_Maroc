@@ -28,6 +28,8 @@ export function demoSnapshot(): LocalSnapshot {
     avatarUrl: null,
     colorIndex: index,
     sortOrder: index,
+    // Le compte de démonstration incarne Romain ; les autres attendent leur propriétaire.
+    userId: index === 0 ? uuid(90) : null,
     createdAt,
     updatedAt: createdAt,
     deletedAt: null,

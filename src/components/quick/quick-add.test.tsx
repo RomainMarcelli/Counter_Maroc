@@ -59,7 +59,7 @@ function setTrip(overrides: Partial<TripValue> = {}): void {
     drinkEntries: [],
     waterEntries: [],
     queue: [],
-    actorId: "romain",
+    actorId: "romain", authorId: "compte-romain",
     selectedParticipantIds: ["romain"],
     setSelectedParticipantIds: vi.fn(),
     refreshActiveTrip: vi.fn(),

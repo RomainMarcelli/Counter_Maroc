@@ -55,6 +55,30 @@ export class MarrakechDatabase extends Dexie {
         entry.priceCentsSnapshot ??= null;
       });
     });
+    // v4 : passage aux comptes email/mot de passe.
+    //
+    // Les données locales antérieures ont été produites sous authentification
+    // anonyme : chaque opération en attente porte un `actionBy` qui ne référence
+    // plus aucun compte, et serait refusée indéfiniment par la RLS (42501). Il
+    // n’y a rien à récupérer côté serveur — ces séjours n’ont jamais été poussés,
+    // c’est précisément l’origine des 403. On repart donc d’une base propre, en
+    // conservant l’identifiant de l’appareil.
+    this.version(4).stores({
+      participants: "id, tripId, [tripId+deletedAt], updatedAt, sortOrder, userId",
+    }).upgrade(async (transaction) => {
+      await Promise.all([
+        transaction.table("trips").clear(),
+        transaction.table("participants").clear(),
+        transaction.table("drinks").clear(),
+        transaction.table("drinkEntries").clear(),
+        transaction.table("waterEntries").clear(),
+        transaction.table("syncQueue").clear(),
+      ]);
+      await transaction.table("settings").toCollection().modify((setting: Partial<LocalSetting>, context) => {
+        // `deviceId` reste : il identifie le téléphone, pas un compte.
+        if (setting.key !== "deviceId") delete context.value;
+      });
+    });
   }
 }
 

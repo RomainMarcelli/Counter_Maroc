@@ -1,7 +1,8 @@
 import type { Drink, DrinkEntry, Participant } from "@/domain/types";
 
 /** Valeurs neutres des champs facultatifs, pour que les fixtures de test restent lisibles. */
-export const PARTICIPANT_DEFAULTS: Pick<Participant, "bacEnabled" | "weightKg" | "distributionRatio" | "bacPrivate"> = {
+export const PARTICIPANT_DEFAULTS: Pick<Participant, "userId" | "bacEnabled" | "weightKg" | "distributionRatio" | "bacPrivate"> = {
+  userId: null,
   bacEnabled: false,
   weightKg: null,
   distributionRatio: null,

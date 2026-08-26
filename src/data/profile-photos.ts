@@ -1,7 +1,8 @@
 import type { Participant } from "@/domain/types";
 import { createId } from "@/lib/id";
 import { updateParticipant } from "./repository";
-import { ensureSupabaseAuth, getSupabase } from "./supabase";
+import { getSupabase } from "./supabase";
+import { currentUserId } from "./auth";
 
 const BUCKET = "profile-photos";
 const MAX_SOURCE_SIZE = 5 * 1024 * 1024;
@@ -54,7 +55,7 @@ export async function uploadParticipantPhoto(participant: Participant, file: Fil
 
   const client = getSupabase();
   if (!client) throw new Error("Configurez Supabase avant d’ajouter des photos de profil.");
-  await ensureSupabaseAuth(client);
+  if (!(await currentUserId())) throw new Error("Reconnecte-toi pour envoyer une photo.");
 
   const optimized = await optimizePhoto(file);
   const path = `${participant.tripId}/${participant.id}/${createId()}.webp`;
@@ -83,7 +84,6 @@ export async function removeParticipantPhoto(participant: Participant): Promise<
   if (!participant.avatarUrl || (typeof navigator !== "undefined" && !navigator.onLine)) return;
   const client = getSupabase();
   const path = storagePathFromPublicUrl(participant.avatarUrl);
-  if (!client || !path) return;
-  await ensureSupabaseAuth(client);
+  if (!client || !path || !(await currentUserId())) return;
   await client.storage.from(BUCKET).remove([path]);
 }

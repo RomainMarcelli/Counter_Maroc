@@ -14,10 +14,19 @@ function base(entity: Trip | Participant | Drink | DrinkEntry | WaterEntry) {
   return { id: entity.id, created_at: entity.createdAt, updated_at: entity.updatedAt, deleted_at: entity.deletedAt };
 }
 
-export function toRemote(entityType: EntityType, value: Trip | Participant | Drink | DrinkEntry | WaterEntry, authUserId: string): RemoteRow {
+/**
+ * `participants.user_id` n’est jamais écrit par cette voie : seul le RPC
+ * `claim_participant` rattache un compte à un participant. L’omettre laisse la
+ * valeur serveur intacte lors d’un upsert, et évite qu’un téléphone réattribue
+ * l’identité de quelqu’un d’autre en renommant simplement un participant.
+ *
+ * `created_by` et `action_by` ne sont pas écrasés non plus : l’auteur d’origine
+ * reste l’auteur, même quand quelqu’un d’autre corrige la ligne.
+ */
+export function toRemote(entityType: EntityType, value: Trip | Participant | Drink | DrinkEntry | WaterEntry): RemoteRow {
   if (entityType === "trip") {
     const entity = value as Trip;
-    return { ...base(entity), name: entity.name, share_code: entity.shareCode, start_date: entity.startDate, end_date: entity.endDate, timezone: entity.timezone, created_by: authUserId };
+    return { ...base(entity), name: entity.name, share_code: entity.shareCode, start_date: entity.startDate, end_date: entity.endDate, timezone: entity.timezone };
   }
   const entity = value as Participant | Drink | DrinkEntry | WaterEntry;
   if (entityType === "participant") {
@@ -37,12 +46,12 @@ export function toRemote(entityType: EntityType, value: Trip | Participant | Dri
   if (entityType === "drinkEntry") {
     const entry = entity as DrinkEntry;
     return {
-      ...base(entry), trip_id: entry.tripId, participant_id: entry.participantId, drink_id: entry.drinkId, consumed_at: entry.consumedAt, action_by: authUserId, device_id: entry.deviceId, round_id: entry.roundId,
+      ...base(entry), trip_id: entry.tripId, participant_id: entry.participantId, drink_id: entry.drinkId, consumed_at: entry.consumedAt, action_by: entry.actionBy, device_id: entry.deviceId, round_id: entry.roundId,
       alcohol_grams: entry.alcoholGrams, drink_name_snapshot: entry.drinkNameSnapshot, paid_by: entry.paidBy, price_cents_snapshot: entry.priceCentsSnapshot,
     };
   }
   const entry = entity as WaterEntry;
-  return { ...base(entry), trip_id: entry.tripId, participant_id: entry.participantId, consumed_at: entry.consumedAt, action_by: authUserId, device_id: entry.deviceId, round_id: entry.roundId };
+  return { ...base(entry), trip_id: entry.tripId, participant_id: entry.participantId, consumed_at: entry.consumedAt, action_by: entry.actionBy, device_id: entry.deviceId, round_id: entry.roundId };
 }
 
 const text = (row: RemoteRow, key: string) => String(row[key] ?? "");
@@ -75,6 +84,7 @@ export function fromRemote(entityType: EntityType, row: RemoteRow): Trip | Parti
   if (entityType === "participant") {
     return {
       ...common, tripId, name: text(row, "name"), avatarUrl: nullable(row, "avatar_url"), colorIndex: Number(row.color_index ?? 0), sortOrder: Number(row.sort_order ?? 0),
+      userId: nullable(row, "user_id"),
       bacEnabled: Boolean(row.bac_estimation_enabled), weightKg: numberOrNull(row, "weight_kg"), distributionRatio: numberOrNull(row, "distribution_ratio"), bacPrivate: Boolean(row.bac_private),
     };
   }

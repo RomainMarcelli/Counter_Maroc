@@ -14,9 +14,11 @@
 - `src/data` : Dexie, repository transactionnel, seed, mapping Supabase et moteur de sync.
 - `src/components` : écrans client réactifs alimentés par `useLiveQuery`.
 - `src/app` : routes App Router et métadonnées PWA.
-- `supabase/migrations` : PostgreSQL, RLS, Auth anonyme et Realtime.
+- `supabase/migrations` : PostgreSQL, RLS, Supabase Auth (email + mot de passe) et Realtime.
 
 Le provider de séjour souscrit aux tables locales. Un tap met donc à jour le DOM dès la validation IndexedDB, normalement en quelques millisecondes, indépendamment de la latence réseau.
+
+Trois portes s’enchaînent avant l’application : la session (`AuthProvider`), le séjour actif (`Onboarding`), puis l’identité dans ce séjour (`IdentityGate`). Aucun écran métier n’est monté tant que l’état de session est inconnu, afin de ne jamais afficher brièvement un séjour avant de rediriger vers la connexion. Voir [AUTH.md](AUTH.md).
 
 ## Modèle de données
 

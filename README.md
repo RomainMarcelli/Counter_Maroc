@@ -2,6 +2,8 @@
 
 PWA mobile-first et offline-first pour saisir les boissons d’un séjour en un ou deux taps. IndexedDB répond immédiatement ; Supabase synchronise ensuite les autres téléphones sans bloquer l’utilisateur.
 
+Chaque personne a un compte email + mot de passe. Tous les membres d’un séjour partagent les mêmes droits : n’importe qui peut ajouter un verre à n’importe qui, l’auteur de l’action restant conservé.
+
 ## Installation
 
 Prérequis : Node.js 20+ et npm.
@@ -12,7 +14,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Ouvrir `http://localhost:3000`. La base locale démarre sans séjour ni consommation. À la création d’un séjour, la sélection de bières, vins, spiritueux et cocktails est ajoutée automatiquement ; elle reste entièrement modifiable. Le bouton **Reset DEV** des réglages efface uniquement la base IndexedDB du navigateur.
+Ouvrir `http://localhost:3000`. Au premier lancement, l’application demande de créer un compte ou de se connecter, puis de créer un séjour ou d’en rejoindre un avec son code. À la création d’un séjour, la sélection de bières, vins, spiritueux et cocktails est ajoutée automatiquement ; elle reste entièrement modifiable. Le bouton **Réinitialiser les données locales** des réglages efface uniquement IndexedDB, jamais le compte.
 
 ## Variables d’environnement
 
@@ -22,7 +24,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 ```
 
-- `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` activent Auth anonyme, la synchronisation et Realtime. Sans eux, l’app reste fonctionnelle en mode local.
+- `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` activent Supabase Auth (email + mot de passe), la synchronisation et Realtime. Sans eux, l’application reste utilisable en mode local sur un seul téléphone, sans compte.
 - `NEXT_PUBLIC_ENABLE_DEMO_SEED` active explicitement le seed de test. Il reste à `false` pour une base vide.
 - Ne placez jamais une clé `secret` ou `service_role` dans une variable `NEXT_PUBLIC_*`.
 
@@ -43,16 +45,18 @@ supabase start
 supabase db reset
 ```
 
-La migration crée les tables, index, politiques RLS, la fonction sécurisée de jonction par code, la publication Realtime et le bucket public `profile-photos` protégé en écriture par les membres du séjour. Elle complète aussi les séjours existants avec les boissons par défaut. Voir [docs/DATABASE.md](docs/DATABASE.md).
+Les migrations créent les tables, index, politiques RLS, les fonctions sécurisées de création et de jonction d’un séjour, la publication Realtime et le bucket public `profile-photos` protégé en écriture par les membres du séjour. Voir [docs/DATABASE.md](docs/DATABASE.md) et [docs/AUTH.md](docs/AUTH.md).
 
 Dans le Dashboard Supabase :
 
-1. **Authentication > Sign In / Providers** : activer **Allow anonymous sign-ins**.
-2. Depuis le panneau **Connect** du projet : copier l’URL du projet et la clé publique `anon`/`publishable` dans `.env`.
-3. Appliquer les migrations avec `supabase db push` : RLS, Realtime, Storage et les policies sont alors configurés automatiquement.
-4. Pour la production, renseigner **Authentication > URL Configuration** avec l’URL publique de l’application et ses redirect URLs autorisées.
+1. **Authentication → Sign In / Providers → Email** : laisser le provider **activé**. C’est le seul nécessaire, aucun OAuth n’est utilisé.
+2. **Authentication → Sign In / Providers → Email → Confirm email** : décocher pour un usage privé entre amis, l’inscription ouvre alors la session immédiatement. Si l’option reste active, l’application affiche « Compte créé. Vérifie ton email. » et attend la confirmation.
+3. **Authentication → Sign In / Providers** : laisser **Allow anonymous sign-ins** désactivé, l’application ne s’en sert plus.
+4. Depuis le panneau **Connect** du projet : copier l’URL du projet et la clé publique `anon`/`publishable` dans `.env`.
+5. Appliquer les migrations avec `supabase db push`, ou coller chaque fichier de `supabase/migrations` dans le **SQL Editor**, dans l’ordre de leurs noms.
+6. Pour la production, renseigner **Authentication → URL Configuration** avec l’URL publique de l’application et ses redirect URLs autorisées.
 
-Ne désactivez pas RLS. Aucun fournisseur e-mail ou OAuth n’est nécessaire pour le parcours invité actuel.
+Ne désactivez jamais RLS. Les droits reposent entièrement sur `trip_members`.
 
 ## Photos de profil
 
@@ -74,6 +78,15 @@ npm run start
 
 `npm run test:all` enchaîne lint, types, tests unitaires et E2E.
 
+Deux suites supplémentaires s’exécutent contre un vrai projet Supabase migré, avec de vraies sessions authentifiées. Elles ne tournent pas par défaut : elles exigent le réseau et la clé de service.
+
+```bash
+SUPABASE_RLS_TEST=1 npm run test:rls                   # policies : membre, intrus, séjour voisin
+SUPABASE_E2E=1 npx playwright test --project=Comptes   # deux comptes, deux navigateurs
+```
+
+Chacune crée ses comptes et son séjour de test, puis les supprime à la fin.
+
 ## Tester la PWA et le hors-ligne
 
 1. Lancer un build de production avec `npm run build && npm run start`.
@@ -87,5 +100,6 @@ Sur iPhone : Safari > Partager > **Sur l’écran d’accueil**. Sur Android : m
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Comptes, séjours et identités](docs/AUTH.md)
 - [Synchronisation offline](docs/OFFLINE_SYNC.md)
 - [Base de données et sécurité](docs/DATABASE.md)

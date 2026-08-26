@@ -3,13 +3,14 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Activity, Camera, Check, Copy, ImageOff, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, Camera, Copy, ImageOff, LoaderCircle, LogOut, Pencil, Plus, Trash2, UserRound } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ParticipantAvatar } from "@/components/participants/participant-avatar";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { useActionDialog } from "@/components/providers/action-dialog-provider";
-import { addParticipant, deleteDrink, deleteParticipant, resetLocalData, setActorId, updateParticipant } from "@/data/repository";
+import { addParticipant, deleteDrink, deleteParticipant, resetLocalData, updateParticipant } from "@/data/repository";
+import { useAuth } from "@/components/providers/auth-provider";
 import type { Drink, Participant } from "@/domain/types";
 import { DrinkFormSheet } from "@/components/quick/drink-form-sheet";
 import { removeParticipantPhoto, uploadParticipantPhoto } from "@/data/profile-photos";
@@ -20,6 +21,7 @@ import { formatCents } from "@/domain/expenses";
 
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { trip, activeParticipants, activeDrinks, actorId } = useTrip();
+  const { account, accountRequired, signOut } = useAuth();
   const toast = useToast();
   const { confirm: confirmAction, prompt: promptAction } = useActionDialog();
   const [qr, setQr] = useState("");
@@ -38,6 +40,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     void QRCode.toDataURL(url, { width: 320, margin: 1, color: { dark: "#1E4A3A", light: "#FFF8EC" } }).then(setQr);
   }, [trip]);
   if (!trip) return null;
+  const myParticipant = activeParticipants.find((participant) => participant.id === actorId) ?? null;
 
   const addPerson = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -121,12 +124,24 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     await deleteDrink(drink);
     toast({ message: `${drink.name} supprimé`, detail: "Les anciennes consommations sont conservées." });
   };
+  const leave = async () => {
+    const confirmed = await confirmAction({
+      eyebrow: "Mon compte",
+      title: "Se déconnecter ?",
+      description: "Le séjour reste enregistré sur ce téléphone. Il faudra une connexion internet pour te reconnecter et retrouver le crew.",
+      confirmLabel: "Se déconnecter",
+      cancelLabel: "Rester connecté",
+      icon: "reset",
+    });
+    if (!confirmed) return;
+    await signOut();
+  };
   const resetDevice = async () => {
     const confirmed = await confirmAction({
       eyebrow: "Zone développeur",
-      title: "Vider ce téléphone ?",
-      description: "Tous les séjours et réglages stockés dans ce navigateur seront effacés. Les données déjà synchronisées dans Supabase ne seront pas supprimées.",
-      confirmLabel: "Vider IndexedDB",
+      title: "Réinitialiser les données locales ?",
+      description: "Tous les séjours et réglages stockés dans ce navigateur seront effacés, ainsi que les actions encore en attente de synchronisation. Les données déjà envoyées à Supabase sont conservées et reviendront à la prochaine connexion.",
+      confirmLabel: "Réinitialiser",
       cancelLabel: "Ne rien effacer",
       tone: "danger",
       icon: "reset",
@@ -146,11 +161,22 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             {qr ? <div className="mx-auto mt-4 w-fit rounded-2xl bg-ivory p-2"><Image src={qr} alt={`QR Code pour rejoindre ${trip.name}`} width={164} height={164} unoptimized /></div> : null}
           </section>
 
-          <section>
-            <h3 className="font-display text-xl font-bold">Qui utilise ce téléphone ?</h3>
-            <p className="mt-1 text-xs text-morocco/55">Ce nom sera conservé comme auteur des actions locales.</p>
-            <div className="mt-3 flex flex-wrap gap-2">{activeParticipants.map((participant) => <button key={participant.id} onClick={async () => { await setActorId(participant.id); toast({ message: `Identité : ${participant.name}` }); }} className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-bold ${actorId === participant.id ? "border-morocco bg-morocco text-ivory" : "border-sand bg-white"}`}><ParticipantAvatar participant={participant} size="sm" /><Check size={14} />{participant.name}</button>)}</div>
-          </section>
+          {accountRequired ? (
+            <section className="rounded-2xl border border-sand bg-white p-4">
+              <h3 className="font-display text-xl font-bold">Mon compte</h3>
+              <p className="mt-1 text-xs text-morocco/55">Ce compte signe les actions faites depuis ce téléphone. Il reste connecté d’un lancement à l’autre.</p>
+              <div className="mt-3 flex min-h-14 items-center gap-3 rounded-xl bg-sand/25 px-3">
+                {myParticipant ? <ParticipantAvatar participant={myParticipant} /> : <span className="flex size-11 items-center justify-center rounded-xl bg-white"><UserRound size={18} /></span>}
+                <span className="min-w-0 flex-1">
+                  <strong className="block truncate text-sm">{account?.displayName ?? "Compte"}</strong>
+                  <span className="block truncate text-[11px] font-bold text-morocco/50">{myParticipant ? `${account?.email ?? ""} · participant ${myParticipant.name}` : account?.email ?? ""}</span>
+                </span>
+              </div>
+              <button onClick={() => void leave()} className="tap-bump mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-sand text-sm font-black">
+                <LogOut size={16} />Se déconnecter
+              </button>
+            </section>
+          ) : null}
 
           <section>
             <h3 className="font-display text-xl font-bold">Participants</h3>
@@ -196,7 +222,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={partyMode} onChange={(event) => setParty(event.target.checked)} className="size-5 accent-[#B5543C]" /><span><strong className="block text-sm">Mode soirée</strong><span className="text-xs text-morocco/55">Navigation réduite à l’ajout et au journal.</span></span></label>
           </section>
 
-          {process.env.NODE_ENV === "development" ? <button onClick={() => void resetDevice()} className="min-h-12 w-full rounded-xl border border-terra text-sm font-black text-terra">Reset DEV · vider IndexedDB</button> : null}
+          <button onClick={() => void resetDevice()} className="tap-bump min-h-12 w-full rounded-xl border border-terra text-sm font-black text-terra">Réinitialiser les données locales</button>
         </div>
       </BottomSheet>
       <DrinkFormSheet open={Boolean(editingDrink)} onClose={() => setEditingDrink(null)} drink={editingDrink} />

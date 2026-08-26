@@ -2,9 +2,10 @@
 
 ## Tables
 
+- `profiles` : prénom affiché d’un compte, alimenté à l’inscription par un trigger sur `auth.users`.
 - `trips` : séjour, code court unique, dates et timezone.
 - `trip_members` : appartenance d’un utilisateur Auth à un séjour.
-- `participants` et `drinks` : référentiels extensibles avec soft delete.
+- `participants` et `drinks` : référentiels extensibles avec soft delete. `participants.user_id` rattache un compte à une personne du séjour ; il reste `null` tant que cette personne n’a pas rejoint.
 - `drink_entries` : verres alcoolisés.
 - `water_entries` : hydratation exclue des classements alcool.
 - `sync_operations` : disponible pour audit/déduplication serveur avancée.
@@ -19,6 +20,14 @@ Les identifiants sont des UUID fournis par les clients. `timestamptz` conserve l
 
 Toutes les tables ont RLS activé. `is_trip_member` est une fonction `security definer` à `search_path` verrouillé qui évite la récursion des policies. Les policies SELECT/INSERT/UPDATE/DELETE limitent chaque accès aux membres du séjour.
 
-`join_trip_by_code` est la seule voie permettant à un utilisateur anonyme authentifié de découvrir un séjour dont il n’est pas encore membre. Elle ne renvoie que l’UUID correspondant au code exact puis inscrit `auth.uid()` dans `trip_members`.
+La règle est le **membership**, pas la propriété individuelle : tout membre crée, modifie et supprime les participants, boissons et consommations de son séjour, y compris pour quelqu’un d’autre. Trois exceptions restreignent davantage :
 
-Le rôle `anon` n’obtient aucun droit direct sur les tables : l’application établit d’abord une session Supabase Auth anonyme, donc les requêtes utilisent le rôle `authenticated` et les policies RLS.
+- `action_by = auth.uid()` est exigé à l’insertion d’une consommation, pour la traçabilité.
+- `participant_in_trip` et `drink_in_trip` interdisent de mélanger deux séjours dans une même ligne.
+- La suppression d’un séjour et la gestion des membres sont réservées au rôle `owner`.
+
+`participants.user_id` n’est jamais écrit par la synchronisation. Le trigger `participants_guard_identity` refuse toute tentative de rattacher un participant à un autre compte que l’appelant, et `claim_participant` est le seul chemin nominal.
+
+`join_trip_by_code` reste la seule voie permettant de découvrir un séjour dont on n’est pas encore membre. Elle résout le code exact puis inscrit `auth.uid()` dans `trip_members`.
+
+Le rôle `anon` ne peut rien écrire : aucune policy ne le vise. Sans session, une insertion échoue avec `42501` — c’est exactement ce qui se produisait quand l’application s’appuyait sur une authentification anonyme désactivée côté projet. Voir [AUTH.md](AUTH.md).

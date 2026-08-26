@@ -28,6 +28,7 @@ export function JournalList() {
   const [person, setPerson] = useState("all");
   const [editing, setEditing] = useState<UndoBatch | null>(null);
   const participantById = new Map(participants.map((item) => [item.id, item]));
+  const participantByUserId = new Map(participants.filter((item) => item.userId).map((item) => [item.userId as string, item]));
   const drinkById = new Map(drinks.map((item) => [item.id, item]));
   const rows = useMemo(() => {
     if (!trip) return [];
@@ -114,8 +115,9 @@ export function JournalList() {
         const key = rowId(row.kind, row.entry.id);
         const checked = pickedSet.has(key);
         const label = `${participant?.name ?? "Participant supprimé"} · ${row.kind === "water" ? "Eau" : drink?.name ?? row.entry.drinkNameSnapshot ?? "Boisson supprimée"}`;
-        // `actionBy` porte l’identité choisie sur le téléphone : on ne l’affiche que si elle correspond à un participant.
-        const addedBy = participantById.get(row.entry.actionBy)?.name ?? null;
+        // `actionBy` est le compte qui a saisi la ligne : on l’affiche via le
+        // participant qu’il incarne, et on reste muet si personne ne correspond.
+        const addedBy = participantByUserId.get(row.entry.actionBy)?.name ?? null;
         return (
           <button
             key={key}
