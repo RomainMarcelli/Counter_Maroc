@@ -1,8 +1,9 @@
 import { db } from "./database";
 import { queueOperation } from "./queue";
 import { demoSnapshot } from "./seed";
-import { SYSTEM_DRINKS, TRIP_TIMEZONE } from "@/domain/constants";
-import type { Drink, DrinkCategory, DrinkEntry, EntityBase, EntityType, Participant, Trip, UndoBatch, WaterEntry } from "@/domain/types";
+import { CATEGORY_DEFAULTS, SYSTEM_DRINKS, TRIP_TIMEZONE } from "@/domain/constants";
+import type { AlcoholComponent, Drink, DrinkCategory, DrinkEntry, EntityBase, EntityType, Participant, Trip, UndoBatch, WaterEntry } from "@/domain/types";
+import { calculateDrinkAlcoholGrams } from "@/domain/bac";
 import { createId, createShareCode } from "@/lib/id";
 
 const ACTIVE_TRIP_KEY = "activeTripId";
@@ -98,11 +99,19 @@ export async function createTrip(input: { name: string; startDate: string; endDa
     createdAt: timestamp,
     updatedAt: timestamp,
     deletedAt: null,
+    bacEnabled: false,
+    weightKg: null,
+    distributionRatio: null,
+    bacPrivate: false,
   };
   const drinks: Drink[] = SYSTEM_DRINKS.map((drink, index) => ({
     id: createId(),
     tripId,
     ...drink,
+    alcoholComponents: drink.alcoholComponents ? drink.alcoholComponents.map((component) => ({ ...component })) : null,
+    // Les doses livrées sont des ordres de grandeur : le séjour les confirme depuis les Réglages.
+    compositionConfirmed: false,
+    priceCents: null,
     isAlcohol: true,
     isSystem: true,
     sortOrder: index,
@@ -130,12 +139,13 @@ export async function addParticipant(tripId: string, name: string, sortOrder: nu
   const timestamp = nowIso();
   const participant: Participant = {
     id: createId(), tripId, name: name.trim(), avatarUrl: null, colorIndex: sortOrder % 4, sortOrder, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+    bacEnabled: false, weightKg: null, distributionRatio: null, bacPrivate: false,
   };
   await putWithQueue("participant", participant);
   return participant;
 }
 
-export async function updateParticipant(participant: Participant, changes: Partial<Pick<Participant, "name" | "avatarUrl">>): Promise<void> {
+export async function updateParticipant(participant: Participant, changes: Partial<Pick<Participant, "name" | "avatarUrl" | "bacEnabled" | "weightKg" | "distributionRatio" | "bacPrivate">>): Promise<void> {
   await putWithQueue("participant", {
     ...participant,
     ...changes,
@@ -149,17 +159,50 @@ export async function deleteParticipant(participant: Participant): Promise<void>
   await putWithQueue("participant", { ...participant, deletedAt: timestamp, updatedAt: timestamp });
 }
 
-export async function addDrink(tripId: string, input: { name: string; category: DrinkCategory; icon: string }, sortOrder: number): Promise<Drink> {
+export interface DrinkCompositionInput {
+  servingVolumeMl: number | null;
+  abvPercent: number | null;
+  alcoholComponents: AlcoholComponent[] | null;
+  compositionConfirmed: boolean;
+  priceCents: number | null;
+}
+
+export type DrinkInput = { name: string; category: DrinkCategory; icon: string } & Partial<DrinkCompositionInput>;
+
+/**
+ * `undefined` : rien n’a été précisé, on propose la dose type de la catégorie (à confirmer).
+ * `null` : la valeur a été explicitement vidée, la composition reste inconnue plutôt qu’inventée.
+ */
+function drinkComposition(input: Partial<DrinkCompositionInput>, category: DrinkCategory): DrinkCompositionInput {
+  const fallback = CATEGORY_DEFAULTS[category];
+  const components = input.alcoholComponents?.length ? input.alcoholComponents : null;
+  return {
+    servingVolumeMl: input.servingVolumeMl === undefined ? fallback.servingVolumeMl : input.servingVolumeMl,
+    abvPercent: components ? input.abvPercent ?? null : input.abvPercent === undefined ? fallback.abvPercent : input.abvPercent,
+    alcoholComponents: components,
+    compositionConfirmed: input.compositionConfirmed ?? false,
+    priceCents: input.priceCents ?? null,
+  };
+}
+
+export async function addDrink(tripId: string, input: DrinkInput, sortOrder: number): Promise<Drink> {
   const timestamp = nowIso();
   const drink: Drink = {
     id: createId(), tripId, name: input.name.trim(), category: input.category, icon: input.icon, isAlcohol: true, isSystem: false, sortOrder, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+    ...drinkComposition(input, input.category),
   };
   await putWithQueue("drink", drink);
   return drink;
 }
 
-export async function updateDrink(drink: Drink, changes: Pick<Drink, "name" | "category" | "icon">): Promise<void> {
-  await putWithQueue("drink", { ...drink, ...changes, name: changes.name.trim(), updatedAt: nowIso() });
+export async function updateDrink(drink: Drink, changes: Pick<Drink, "name" | "category" | "icon"> & Partial<DrinkCompositionInput>): Promise<void> {
+  await putWithQueue("drink", {
+    ...drink,
+    ...changes,
+    alcoholComponents: changes.alcoholComponents?.length ? changes.alcoholComponents : null,
+    name: changes.name.trim(),
+    updatedAt: nowIso(),
+  });
 }
 
 export async function deleteDrink(drink: Drink): Promise<void> {
@@ -167,13 +210,31 @@ export async function deleteDrink(drink: Drink): Promise<void> {
   await putWithQueue("drink", { ...drink, deletedAt: timestamp, updatedAt: timestamp });
 }
 
-export async function addDrinkRound(tripId: string, participantIds: string[], drinkId: string): Promise<UndoBatch> {
+/**
+ * Photographie de la boisson au moment du verre : si la recette du Mojito change au jour 8,
+ * les Mojitos des sept premiers jours gardent l’alcool et le prix qu’ils avaient réellement.
+ */
+function entrySnapshot(drink: Drink | undefined): Pick<DrinkEntry, "alcoholGrams" | "drinkNameSnapshot" | "priceCentsSnapshot"> {
+  if (!drink) return { alcoholGrams: null, drinkNameSnapshot: null, priceCentsSnapshot: null };
+  return {
+    alcoholGrams: calculateDrinkAlcoholGrams(drink),
+    drinkNameSnapshot: drink.name,
+    priceCentsSnapshot: drink.priceCents,
+  };
+}
+
+export async function addDrinkRound(tripId: string, participantIds: string[], drinkId: string, consumedAt?: string): Promise<UndoBatch> {
   const timestamp = nowIso();
+  const consumedIso = consumedAt ?? timestamp;
   const deviceId = await getOrCreateDeviceId();
   const actionBy = await getActorId();
   const roundId = participantIds.length > 1 ? createId() : null;
+  const snapshot = entrySnapshot(await db.drinks.get(drinkId));
   const entries: DrinkEntry[] = participantIds.map((participantId) => ({
-    id: createId(), tripId, participantId, drinkId, consumedAt: timestamp, actionBy, deviceId, roundId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+    id: createId(), tripId, participantId, drinkId, consumedAt: consumedIso, actionBy, deviceId, roundId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+    ...snapshot,
+    // Celui qui saisit la tournée est présumé l’avoir payée ; le Journal permet de corriger.
+    paidBy: actionBy,
   }));
   await db.transaction("rw", db.drinkEntries, db.syncQueue, async () => {
     await db.drinkEntries.bulkPut(entries);
@@ -183,13 +244,13 @@ export async function addDrinkRound(tripId: string, participantIds: string[], dr
   return { drinkEntryIds: entries.map((entry) => entry.id), waterEntryIds: [] };
 }
 
-export async function addWaterRound(tripId: string, participantIds: string[]): Promise<UndoBatch> {
+export async function addWaterRound(tripId: string, participantIds: string[], consumedAt?: string): Promise<UndoBatch> {
   const timestamp = nowIso();
   const deviceId = await getOrCreateDeviceId();
   const actionBy = await getActorId();
   const roundId = participantIds.length > 1 ? createId() : null;
   const entries: WaterEntry[] = participantIds.map((participantId) => ({
-    id: createId(), tripId, participantId, consumedAt: timestamp, actionBy, deviceId, roundId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+    id: createId(), tripId, participantId, consumedAt: consumedAt ?? timestamp, actionBy, deviceId, roundId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
   }));
   await db.transaction("rw", db.waterEntries, db.syncQueue, async () => {
     await db.waterEntries.bulkPut(entries);
@@ -199,8 +260,60 @@ export async function addWaterRound(tripId: string, participantIds: string[]): P
   return { drinkEntryIds: [], waterEntryIds: entries.map((entry) => entry.id) };
 }
 
-export async function updateDrinkEntry(entry: DrinkEntry, changes: Pick<DrinkEntry, "participantId" | "drinkId" | "consumedAt">): Promise<void> {
-  await putWithQueue("drinkEntry", { ...entry, ...changes, updatedAt: nowIso() });
+/**
+ * Modifier une entrée reprend un snapshot explicite dès que la boisson change :
+ * l’alcool estimé et le prix suivent la boisson réellement bue.
+ */
+export async function updateDrinkEntry(entry: DrinkEntry, changes: Partial<Pick<DrinkEntry, "participantId" | "drinkId" | "consumedAt" | "paidBy">>): Promise<void> {
+  const next = { ...entry, ...changes, updatedAt: nowIso() };
+  const snapshot = changes.drinkId && changes.drinkId !== entry.drinkId ? entrySnapshot(await db.drinks.get(changes.drinkId)) : {};
+  await putWithQueue("drinkEntry", { ...next, ...snapshot });
+}
+
+/** Modification groupée depuis le Journal : réattribuer, décaler l’heure, changer le payeur. */
+export async function updateEntries(batch: UndoBatch, changes: { participantId?: string; paidBy?: string; shiftMinutes?: number }): Promise<void> {
+  const timestamp = nowIso();
+  const shift = (changes.shiftMinutes ?? 0) * 60_000;
+  const applyTime = (consumedAt: string) => (shift ? new Date(Date.parse(consumedAt) + shift).toISOString() : consumedAt);
+  const drinks = (await db.drinkEntries.bulkGet(batch.drinkEntryIds)).filter((entry): entry is DrinkEntry => Boolean(entry));
+  const waters = (await db.waterEntries.bulkGet(batch.waterEntryIds)).filter((entry): entry is WaterEntry => Boolean(entry));
+  const nextDrinks = drinks.map((entry) => ({
+    ...entry,
+    participantId: changes.participantId ?? entry.participantId,
+    paidBy: changes.paidBy ?? entry.paidBy,
+    consumedAt: applyTime(entry.consumedAt),
+    updatedAt: timestamp,
+  }));
+  const nextWaters = waters.map((entry) => ({
+    ...entry,
+    participantId: changes.participantId ?? entry.participantId,
+    consumedAt: applyTime(entry.consumedAt),
+    updatedAt: timestamp,
+  }));
+  await db.transaction("rw", db.drinkEntries, db.waterEntries, db.syncQueue, async () => {
+    await db.drinkEntries.bulkPut(nextDrinks);
+    await db.waterEntries.bulkPut(nextWaters);
+    await db.syncQueue.bulkPut([
+      ...nextDrinks.map((entry) => queueOperation("drinkEntry", entry)),
+      ...nextWaters.map((entry) => queueOperation("waterEntry", entry)),
+    ]);
+  });
+  signalLocalChange();
+}
+
+/** Recalcule le snapshot d’alcool et de prix à partir de la carte actuelle. */
+export async function refreshEntrySnapshots(entryIds: string[]): Promise<number> {
+  const timestamp = nowIso();
+  const entries = (await db.drinkEntries.bulkGet(entryIds)).filter((entry): entry is DrinkEntry => Boolean(entry));
+  const drinks = new Map((await db.drinks.bulkGet([...new Set(entries.map((entry) => entry.drinkId))])).filter((drink): drink is Drink => Boolean(drink)).map((drink) => [drink.id, drink]));
+  const next = entries.map((entry) => ({ ...entry, ...entrySnapshot(drinks.get(entry.drinkId)), updatedAt: timestamp }));
+  if (!next.length) return 0;
+  await db.transaction("rw", db.drinkEntries, db.syncQueue, async () => {
+    await db.drinkEntries.bulkPut(next);
+    await db.syncQueue.bulkPut(next.map((entry) => queueOperation("drinkEntry", entry)));
+  });
+  signalLocalChange();
+  return next.length;
 }
 
 export async function deleteDrinkEntry(entry: DrinkEntry): Promise<void> {
@@ -217,21 +330,61 @@ export async function deleteWaterEntry(entry: WaterEntry): Promise<void> {
   await putWithQueue("waterEntry", { ...entry, updatedAt: timestamp, deletedAt: timestamp });
 }
 
-export async function undoBatch(batch: UndoBatch): Promise<void> {
+async function setEntriesDeleted(batch: UndoBatch, deleted: boolean): Promise<void> {
   const timestamp = nowIso();
+  const deletedAt = deleted ? timestamp : null;
   const drinks = (await db.drinkEntries.bulkGet(batch.drinkEntryIds)).filter((entry): entry is DrinkEntry => Boolean(entry));
   const waters = (await db.waterEntries.bulkGet(batch.waterEntryIds)).filter((entry): entry is WaterEntry => Boolean(entry));
-  const deletedDrinks = drinks.map((entry) => ({ ...entry, deletedAt: timestamp, updatedAt: timestamp }));
-  const deletedWaters = waters.map((entry) => ({ ...entry, deletedAt: timestamp, updatedAt: timestamp }));
+  const nextDrinks = drinks.map((entry) => ({ ...entry, deletedAt, updatedAt: timestamp }));
+  const nextWaters = waters.map((entry) => ({ ...entry, deletedAt, updatedAt: timestamp }));
   await db.transaction("rw", db.drinkEntries, db.waterEntries, db.syncQueue, async () => {
-    await db.drinkEntries.bulkPut(deletedDrinks);
-    await db.waterEntries.bulkPut(deletedWaters);
+    await db.drinkEntries.bulkPut(nextDrinks);
+    await db.waterEntries.bulkPut(nextWaters);
     await db.syncQueue.bulkPut([
-      ...deletedDrinks.map((entry) => queueOperation("drinkEntry", entry)),
-      ...deletedWaters.map((entry) => queueOperation("waterEntry", entry)),
+      ...nextDrinks.map((entry) => queueOperation("drinkEntry", entry)),
+      ...nextWaters.map((entry) => queueOperation("waterEntry", entry)),
     ]);
   });
   signalLocalChange();
+}
+
+/** Annule un ajout depuis l’écran Rapide : les verres qui viennent d’être créés repartent. */
+export async function undoBatch(batch: UndoBatch): Promise<void> {
+  await setEntriesDeleted(batch, true);
+}
+
+/** Suppression groupée depuis le Journal. */
+export async function deleteEntries(batch: UndoBatch): Promise<void> {
+  await setEntriesDeleted(batch, true);
+}
+
+/** Annulation d’une suppression groupée : les entrées reviennent telles quelles. */
+export async function restoreEntries(batch: UndoBatch): Promise<void> {
+  await setEntriesDeleted(batch, false);
+}
+
+export interface DeletedEntry {
+  kind: "drink" | "water";
+  id: string;
+  participantId: string;
+  drinkId: string | null;
+  drinkName: string | null;
+  consumedAt: string;
+  deletedAt: string;
+}
+
+/** Corbeille du séjour : ce qui a été supprimé reste restaurable tant qu’il est en base locale. */
+export async function listDeletedEntries(tripId: string, limit = 40): Promise<DeletedEntry[]> {
+  const [drinkEntries, waterEntries] = await Promise.all([
+    db.drinkEntries.where("tripId").equals(tripId).filter((entry) => Boolean(entry.deletedAt)).toArray(),
+    db.waterEntries.where("tripId").equals(tripId).filter((entry) => Boolean(entry.deletedAt)).toArray(),
+  ]);
+  return [
+    ...drinkEntries.map((entry) => ({ kind: "drink" as const, id: entry.id, participantId: entry.participantId, drinkId: entry.drinkId, drinkName: entry.drinkNameSnapshot, consumedAt: entry.consumedAt, deletedAt: entry.deletedAt ?? "" })),
+    ...waterEntries.map((entry) => ({ kind: "water" as const, id: entry.id, participantId: entry.participantId, drinkId: null, drinkName: null, consumedAt: entry.consumedAt, deletedAt: entry.deletedAt ?? "" })),
+  ]
+    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+    .slice(0, limit);
 }
 
 export async function resetLocalData(): Promise<void> {

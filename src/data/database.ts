@@ -32,6 +32,29 @@ export class MarrakechDatabase extends Dexie {
         transaction.table("settings").clear(),
       ]);
     });
+    // v3 : estimation d’alcoolémie et addition du séjour. On complète les enregistrements
+    // existants au lieu de les effacer — un téléphone déjà en séjour ne perd rien.
+    this.version(3).upgrade(async (transaction) => {
+      await transaction.table("participants").toCollection().modify((participant: Partial<Participant>) => {
+        participant.bacEnabled ??= false;
+        participant.weightKg ??= null;
+        participant.distributionRatio ??= null;
+        participant.bacPrivate ??= false;
+      });
+      await transaction.table("drinks").toCollection().modify((drink: Partial<Drink>) => {
+        drink.servingVolumeMl ??= null;
+        drink.abvPercent ??= null;
+        drink.alcoholComponents ??= null;
+        drink.compositionConfirmed ??= false;
+        drink.priceCents ??= null;
+      });
+      await transaction.table("drinkEntries").toCollection().modify((entry: Partial<DrinkEntry>) => {
+        entry.alcoholGrams ??= null;
+        entry.drinkNameSnapshot ??= null;
+        entry.paidBy ??= null;
+        entry.priceCentsSnapshot ??= null;
+      });
+    });
   }
 }
 

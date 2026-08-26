@@ -1,4 +1,5 @@
 import { SYSTEM_DRINKS, TRIP_TIMEZONE } from "@/domain/constants";
+import { calculateDrinkAlcoholGrams } from "@/domain/bac";
 import type { Drink, DrinkEntry, LocalSnapshot, Participant, Trip, WaterEntry } from "@/domain/types";
 
 const uuid = (suffix: number) => `00000000-0000-4000-8000-${suffix.toString().padStart(12, "0")}`;
@@ -30,11 +31,18 @@ export function demoSnapshot(): LocalSnapshot {
     createdAt,
     updatedAt: createdAt,
     deletedAt: null,
+    bacEnabled: index === 0,
+    weightKg: index === 0 ? 78 : null,
+    distributionRatio: index === 0 ? 0.68 : null,
+    bacPrivate: false,
   }));
   const drinks: Drink[] = SYSTEM_DRINKS.map((drink, index) => ({
     id: uuid(200 + index),
     tripId,
     ...drink,
+    alcoholComponents: drink.alcoholComponents ? drink.alcoholComponents.map((component) => ({ ...component })) : null,
+    compositionConfirmed: false,
+    priceCents: 4500 + (index % 5) * 1000,
     isAlcohol: true,
     isSystem: true,
     sortOrder: index,
@@ -65,6 +73,10 @@ export function demoSnapshot(): LocalSnapshot {
         createdAt: consumedAt,
         updatedAt: consumedAt,
         deletedAt: null,
+        alcoholGrams: calculateDrinkAlcoholGrams(drink),
+        drinkNameSnapshot: drink.name,
+        paidBy: participants[day % participants.length].id,
+        priceCentsSnapshot: drink.priceCents,
       });
     }
     for (let index = 0; index < 4 + day; index += 1) {

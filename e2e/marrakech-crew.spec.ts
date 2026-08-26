@@ -7,7 +7,8 @@ async function openFreshDemo(page: Page) {
     await new Promise<void>((resolve) => { const request = indexedDB.deleteDatabase("marrakech-crew"); request.onsuccess = () => resolve(); request.onerror = () => resolve(); request.onblocked = () => resolve(); });
   });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Pour qui ?" })).toBeVisible();
+  // Marge large : `next dev` compile la route à la demande au premier passage.
+  await expect(page.getByRole("heading", { name: "Pour qui ?" })).toBeVisible({ timeout: 30_000 });
 }
 
 test.beforeEach(async ({ page }) => { await openFreshDemo(page); });
@@ -36,7 +37,8 @@ test("une consommation hors ligne survit au rechargement", async ({ page, contex
   await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
   await expect(page.getByText(/Enregistré sur ce téléphone/)).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Pour qui ?" })).toBeVisible();
+  // Rechargement hors ligne : tout est servi par le service worker, ce qui demande un peu de marge.
+  await expect(page.getByRole("heading", { name: "Pour qui ?" })).toBeVisible({ timeout: 20_000 });
   await context.setOffline(false);
   await page.getByRole("link", { name: "Journal" }).click();
   await expect(page.getByText("Romain · Mojito").first()).toBeVisible();
@@ -68,10 +70,105 @@ test("ajoute un nouveau cocktail", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Ajouter un Gin Tonic aux participants sélectionnés" })).toBeVisible();
 });
 
+test("le filtre de catégorie tient en un tap et survit à un aller-retour vers le Journal", async ({ page }) => {
+  await page.getByRole("button", { name: "Cocktails" }).click();
+  await expect(page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ajouter un Bière locale aux participants sélectionnés" })).toBeHidden();
+
+  await page.getByRole("link", { name: "Journal" }).click();
+  await page.getByRole("link", { name: "Rapide" }).click();
+
+  await expect(page.getByRole("button", { name: "Cocktails" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Ajouter un Bière locale aux participants sélectionnés" })).toBeHidden();
+});
+
+test("Annuler retire immédiatement le verre du Journal", async ({ page }) => {
+  await page.getByRole("link", { name: "Journal" }).click();
+  const before = await page.getByText("Romain · Mojito").count();
+
+  await page.getByRole("link", { name: "Rapide" }).click();
+  await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
+  await expect(page.getByText("Mojito ajouté à Romain")).toBeVisible();
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByText("Mojito ajouté à Romain")).toBeHidden();
+
+  await page.getByRole("link", { name: "Journal" }).click();
+  await expect(page.getByText("Romain · Mojito")).toHaveCount(before);
+});
+
+test("sélectionne, supprime puis restaure plusieurs verres d’un coup", async ({ page }) => {
+  const rows = page.locator("main button:has(strong)");
+  await page.getByRole("link", { name: "Journal" }).click();
+  // On attend le Journal : l’écran Rapide contient lui aussi un bouton avec un <strong>.
+  await expect(page.getByRole("heading", { name: "Journal" })).toBeVisible();
+  await expect(rows.first()).toBeVisible();
+  const before = await rows.count();
+
+  await page.getByRole("button", { name: "Sélectionner" }).click();
+  await rows.nth(0).click();
+  await rows.nth(1).click();
+  await expect(page.getByText("2 sélectionnés")).toBeVisible();
+
+  await page.getByRole("button", { name: "Supprimer" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Supprimer les 2" }).click();
+  await expect(rows).toHaveCount(before - 2);
+  await expect(page.getByText("2 consommations supprimées")).toBeVisible();
+
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(rows).toHaveCount(before);
+});
+
 test("la synchronisation Supabase rejoue la queue après reconnexion", async ({ page, context }) => {
   test.skip(!process.env.NEXT_PUBLIC_SUPABASE_URL, "Nécessite un projet Supabase de test");
   await context.setOffline(true);
   await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
   await context.setOffline(false);
   await expect(page.getByRole("button", { name: /Synchronisé/ })).toBeVisible({ timeout: 20_000 });
+});
+
+test("configure un poids, ajoute deux whiskys et suit l’alcoolémie estimée", async ({ page, context }) => {
+  await page.getByRole("button", { name: "Ouvrir les réglages" }).click();
+  await page.getByRole("button", { name: "Estimation d’alcoolémie de Romain" }).click();
+  const profil = page.getByRole("dialog", { name: /Estimation d’alcoolémie · Romain/ });
+  await profil.getByRole("checkbox").first().check();
+  await profil.getByLabel(/Poids/).fill("70");
+  await profil.getByRole("button", { name: "Enregistrer" }).click();
+  await page.getByRole("dialog", { name: "Le séjour" }).getByRole("button", { name: "Fermer", exact: true }).click();
+
+  // Les consommations de démo sont datées plus tard dans le séjour : le taux part de zéro.
+  const estimate = page.getByText(/≈ \d,\d\d/).first();
+  await expect(page.getByText("g/L estimés")).toBeVisible();
+  await expect(estimate).toHaveText("≈ 0,00");
+
+  await page.getByRole("button", { name: "Ajouter un Whisky aux participants sélectionnés" }).click();
+  await page.getByRole("button", { name: "Ajouter un Whisky aux participants sélectionnés" }).click();
+  // Un verre à peine servi n’est pas encore dans le sang : l’écran l’annonce au lieu d’un 0 muet.
+  await expect(page.getByText("absorption en cours")).toBeVisible();
+
+  // Le détail expose le pic et la courbe, recalculés depuis les consommations.
+  await page.getByRole("button", { name: /Voir le détail de l’alcoolémie estimée de Romain/ }).click();
+  const detail = page.getByRole("dialog", { name: /Alcoolémie estimée · Romain/ });
+  await expect(detail.getByText("Pic estimé")).toBeVisible();
+  await expect(detail.getByRole("img", { name: /Courbe d’alcoolémie estimée de Romain/ })).toBeVisible();
+  await expect(detail.getByText(/Ne pas utiliser cette estimation pour décider de conduire/)).toBeVisible();
+  await detail.getByRole("button", { name: "Fermer" }).click();
+
+  // Annulation : l’entrée disparaît et le compteur du jour est recalculé immédiatement.
+  const counter = page.getByText(/Romain · \d+ verres aujourd’hui/);
+  await expect(counter).toHaveText("Romain · 2 verres aujourd’hui");
+  await page.getByRole("button", { name: "Ajouter un Whisky aux participants sélectionnés" }).click();
+  await expect(counter).toHaveText("Romain · 3 verres aujourd’hui");
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(counter).toHaveText("Romain · 2 verres aujourd’hui");
+
+  // Hors ligne : écriture locale immédiate, opération en attente, puis reconnexion sans doublon.
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Ajouter un Whisky aux participants sélectionnés" }).click();
+  await expect(page.getByText(/Enregistré sur ce téléphone/)).toBeVisible();
+  await expect(counter).toHaveText("Romain · 3 verres aujourd’hui");
+  await context.setOffline(false);
+
+  await page.getByRole("link", { name: "Journal" }).click();
+  await expect(page.getByText("Romain · Whisky")).toHaveCount(3);
+  await expect(estimate).toBeHidden();
 });

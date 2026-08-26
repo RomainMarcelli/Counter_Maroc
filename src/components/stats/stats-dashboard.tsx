@@ -6,6 +6,8 @@ import { useTrip } from "@/components/providers/trip-provider";
 import { calculateStats } from "@/domain/stats";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TemporalAnalysis } from "./temporal-analysis";
+import { BacSection } from "./bac-section";
+import { ExpensesSection } from "./expenses-section";
 import { ParticipantAvatar } from "@/components/participants/participant-avatar";
 
 export function StatsDashboard() {
@@ -33,6 +35,10 @@ export function StatsDashboard() {
       </section>
 
       <TemporalAnalysis trip={trip} participants={participants} drinks={drinks} drinkEntries={drinkEntries} waterEntries={waterEntries} />
+
+      <BacSection />
+
+      <ExpensesSection />
 
       <section>
         <SectionTitle icon={<BarChart3 />} title="Classement" subtitle={`${stats.totalAlcohol} verres au total`} />

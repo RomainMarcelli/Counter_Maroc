@@ -1,3 +1,7 @@
+import type { AlcoholComponent } from "./bac/types";
+
+export type { AlcoholComponent };
+
 export type DrinkCategory = "beer" | "wine" | "spirit" | "cocktail";
 export type EntityType = "trip" | "participant" | "drink" | "drinkEntry" | "waterEntry";
 export type QueueStatus = "pending" | "syncing" | "failed";
@@ -25,6 +29,13 @@ export interface Participant extends EntityBase {
   avatarUrl: string | null;
   colorIndex: number;
   sortOrder: number;
+  /** Estimation d’alcoolémie — facultatif, désactivé tant que la personne ne l’active pas. */
+  bacEnabled: boolean;
+  weightKg: number | null;
+  /** Coefficient de répartition de Widmark. Seul ce nombre est stocké, jamais de donnée corporelle. */
+  distributionRatio: number | null;
+  /** Ne montrer l’estimation que sur le téléphone de la personne concernée. */
+  bacPrivate: boolean;
 }
 
 export interface Drink extends EntityBase {
@@ -34,6 +45,16 @@ export interface Drink extends EntityBase {
   isAlcohol: boolean;
   isSystem: boolean;
   sortOrder: number;
+  /** Volume du verre servi, en ml. */
+  servingVolumeMl: number | null;
+  /** Degré du verre entier, utilisé quand la boisson n’a pas de composants détaillés. */
+  abvPercent: number | null;
+  /** Alcools de la recette : un cocktail n’est jamais calculé sur son volume total. */
+  alcoholComponents: AlcoholComponent[] | null;
+  /** false tant que personne n’a validé la dose réellement servie. */
+  compositionConfirmed: boolean;
+  /** Prix unitaire pour l’addition du séjour, en centimes. */
+  priceCents: number | null;
 }
 
 export interface DrinkEntry extends EntityBase {
@@ -43,6 +64,12 @@ export interface DrinkEntry extends EntityBase {
   actionBy: string;
   deviceId: string;
   roundId: string | null;
+  /** Snapshot de l’alcool pur au moment du verre : modifier une recette ne réécrit pas le passé. */
+  alcoholGrams: number | null;
+  drinkNameSnapshot: string | null;
+  /** Qui a payé ce verre (participant), pour l’addition. */
+  paidBy: string | null;
+  priceCentsSnapshot: number | null;
 }
 
 export interface WaterEntry extends EntityBase {

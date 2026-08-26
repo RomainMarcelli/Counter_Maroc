@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { calculateStats } from "./stats";
 import type { Drink, DrinkEntry, Participant, Trip, WaterEntry } from "./types";
+import { DRINK_DEFAULTS, ENTRY_DEFAULTS, PARTICIPANT_DEFAULTS } from "@/test/factories";
 
 const base = { tripId: "trip", createdAt: "2026-09-07T10:00:00.000Z", updatedAt: "2026-09-07T10:00:00.000Z", deletedAt: null };
 const trip: Trip = { ...base, id: "trip", name: "Marrakech 2026", shareCode: "CODE", startDate: "2026-09-07", endDate: "2026-09-16", timezone: "Africa/Casablanca", createdBy: "user" };
 const participants: Participant[] = [
-  { ...base, id: "romain", name: "Romain", avatarUrl: null, colorIndex: 0, sortOrder: 0 },
-  { ...base, id: "lucas", name: "Lucas", avatarUrl: null, colorIndex: 1, sortOrder: 1 },
+  { ...base, ...PARTICIPANT_DEFAULTS, id: "romain", name: "Romain", avatarUrl: null, colorIndex: 0, sortOrder: 0 },
+  { ...base, ...PARTICIPANT_DEFAULTS, id: "lucas", name: "Lucas", avatarUrl: null, colorIndex: 1, sortOrder: 1 },
 ];
 const drinks: Drink[] = [
-  { ...base, id: "mojito", name: "Mojito", icon: "🌿", category: "cocktail", isAlcohol: true, isSystem: true, sortOrder: 0 },
-  { ...base, id: "beer", name: "Bière", icon: "🍺", category: "beer", isAlcohol: true, isSystem: true, sortOrder: 1 },
+  { ...base, ...DRINK_DEFAULTS, id: "mojito", name: "Mojito", icon: "🌿", category: "cocktail", isAlcohol: true, isSystem: true, sortOrder: 0 },
+  { ...base, ...DRINK_DEFAULTS, id: "beer", name: "Bière", icon: "🍺", category: "beer", isAlcohol: true, isSystem: true, sortOrder: 1 },
 ];
 
 function entry(id: string, participantId: string, drinkId: string, consumedAt: string): DrinkEntry {
-  return { ...base, id, participantId, drinkId, consumedAt, actionBy: "user", deviceId: "device", roundId: null };
+  return { ...base, ...ENTRY_DEFAULTS, id, participantId, drinkId, consumedAt, actionBy: "user", deviceId: "device", roundId: null };
 }
 
 describe("calculateStats", () => {

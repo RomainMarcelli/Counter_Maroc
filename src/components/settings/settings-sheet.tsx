@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Camera, Check, Copy, ImageOff, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, Camera, Check, Copy, ImageOff, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ParticipantAvatar } from "@/components/participants/participant-avatar";
 import { useTrip } from "@/components/providers/trip-provider";
@@ -13,6 +13,10 @@ import { addParticipant, deleteDrink, deleteParticipant, resetLocalData, setActo
 import type { Drink, Participant } from "@/domain/types";
 import { DrinkFormSheet } from "@/components/quick/drink-form-sheet";
 import { removeParticipantPhoto, uploadParticipantPhoto } from "@/data/profile-photos";
+import { BacProfileSheet } from "@/components/bac/bac-profile-sheet";
+import { TrashSection } from "./trash-section";
+import { calculateDrinkAlcoholGrams, canSeeBac, formatAlcoholGrams } from "@/domain/bac";
+import { formatCents } from "@/domain/expenses";
 
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { trip, activeParticipants, activeDrinks, actorId } = useTrip();
@@ -23,6 +27,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [editingDrink, setEditingDrink] = useState<Drink | null>(null);
   const [partyMode, setPartyMode] = useState(false);
   const [uploadingParticipantId, setUploadingParticipantId] = useState<string | null>(null);
+  const [bacParticipant, setBacParticipant] = useState<Participant | null>(null);
 
   useEffect(() => {
     setPartyMode(localStorage.getItem("partyMode") === "true");
@@ -158,6 +163,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
                 <input id={`photo-${participant.id}`} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={Boolean(uploadingParticipantId)} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void setPhoto(participant.id, file); }} />
                 <label htmlFor={`photo-${participant.id}`} className={`flex size-11 cursor-pointer items-center justify-center rounded-xl ${uploadingParticipantId ? "pointer-events-none opacity-50" : "hover:bg-sand/30"}`} aria-label={`${participant.avatarUrl ? "Changer" : "Ajouter"} la photo de ${participant.name}`}>{uploading ? <LoaderCircle size={17} className="animate-spin" /> : <Camera size={17} />}</label>
                 {participant.avatarUrl ? <button onClick={() => void removePhoto(participant)} className="flex size-11 items-center justify-center text-terra" aria-label={`Retirer la photo de ${participant.name}`}><ImageOff size={17} /></button> : null}
+                <button onClick={() => setBacParticipant(participant)} className={`flex size-11 items-center justify-center ${canSeeBac(participant, actorId) ? "text-terra" : "text-morocco/40"}`} aria-label={`Estimation d’alcoolémie de ${participant.name}`} title={participant.bacEnabled ? "Estimation activée" : "Estimation désactivée"}><Activity size={17} /></button>
                 <button onClick={() => void renameParticipant(participant)} className="flex size-11 items-center justify-center" aria-label={`Renommer ${participant.name}`}><Pencil size={17} /></button>
                 <button onClick={() => void removeParticipant(participant)} className="flex size-11 items-center justify-center text-terra" aria-label={`Supprimer ${participant.name}`}><Trash2 size={17} /></button>
               </div>;
@@ -167,8 +173,24 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
           <section>
             <h3 className="font-display text-xl font-bold">Boissons</h3>
-            <div className="mt-3 space-y-2">{activeDrinks.map((drink) => <div key={drink.id} className="flex min-h-12 items-center gap-2 rounded-xl bg-white px-3"><span className="text-xl">{drink.icon}</span><span className="flex-1 text-sm font-extrabold">{drink.name}</span><button onClick={() => setEditingDrink(drink)} className="flex size-11 items-center justify-center" aria-label={`Modifier ${drink.name}`}><Pencil size={17} /></button><button onClick={() => void removeDrink(drink)} className="flex size-11 items-center justify-center text-terra" aria-label={`Supprimer ${drink.name}`}><Trash2 size={17} /></button></div>)}</div>
+            <p className="mt-1 text-xs text-morocco/55">Les doses livrées sont des ordres de grandeur. Ajustez-les d’après les verres réellement servis : elles servent à l’estimation d’alcoolémie et à l’addition.</p>
+            <div className="mt-3 space-y-2">{activeDrinks.map((drink) => {
+              const grams = calculateDrinkAlcoholGrams(drink);
+              return <div key={drink.id} className="flex min-h-12 items-center gap-2 rounded-xl bg-white px-3">
+                <span className="text-xl">{drink.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <strong className="block truncate text-sm">{drink.name}</strong>
+                  <span className={`block truncate text-[11px] font-bold ${drink.compositionConfirmed ? "text-morocco/50" : "text-terra"}`}>
+                    {grams === null ? "Composition à confirmer" : `${drink.compositionConfirmed ? "" : "À confirmer · "}≈ ${formatAlcoholGrams(grams)}${drink.priceCents ? ` · ${formatCents(drink.priceCents)}` : ""}`}
+                  </span>
+                </span>
+                <button onClick={() => setEditingDrink(drink)} className="flex size-11 shrink-0 items-center justify-center" aria-label={`Modifier ${drink.name}`}><Pencil size={17} /></button>
+                <button onClick={() => void removeDrink(drink)} className="flex size-11 shrink-0 items-center justify-center text-terra" aria-label={`Supprimer ${drink.name}`}><Trash2 size={17} /></button>
+              </div>;
+            })}</div>
           </section>
+
+          <TrashSection open={open} />
 
           <section className="rounded-2xl border border-sand bg-white p-4">
             <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={partyMode} onChange={(event) => setParty(event.target.checked)} className="size-5 accent-[#B5543C]" /><span><strong className="block text-sm">Mode soirée</strong><span className="text-xs text-morocco/55">Navigation réduite à l’ajout et au journal.</span></span></label>
@@ -178,6 +200,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
         </div>
       </BottomSheet>
       <DrinkFormSheet open={Boolean(editingDrink)} onClose={() => setEditingDrink(null)} drink={editingDrink} />
+      <BacProfileSheet participant={bacParticipant} onClose={() => setBacParticipant(null)} />
     </>
   );
 }
