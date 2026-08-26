@@ -51,8 +51,13 @@ test("modifie puis supprime une consommation", async ({ page }) => {
   await page.getByRole("button", { name: "Enregistrer" }).click();
   await expect(page.getByText("Lucas · Bière locale").first()).toBeVisible();
   await page.getByText("Lucas · Bière locale").first().click();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Supprimer" }).click();
+  const confirmation = page.getByRole("dialog", { name: "Supprimer cette consommation ?" });
+  await expect(confirmation.getByText(/disparaîtra du Journal/)).toBeVisible();
+  await confirmation.getByRole("button", { name: "Garder l’entrée" }).click();
+  await expect(confirmation).toBeHidden();
+  await page.getByRole("button", { name: "Supprimer" }).click();
+  await confirmation.getByRole("button", { name: "Supprimer le verre" }).click();
   await expect(page.getByText("Consommation supprimée")).toBeVisible();
 });
 

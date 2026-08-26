@@ -12,7 +12,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Ouvrir `http://localhost:3000`. La base locale démarre vide : créez ou rejoignez un séjour depuis l’écran d’accueil, puis ajoutez vos participants et boissons. Le bouton **Reset DEV** des réglages efface uniquement la base IndexedDB du navigateur.
+Ouvrir `http://localhost:3000`. La base locale démarre sans séjour ni consommation. À la création d’un séjour, la sélection de bières, vins, spiritueux et cocktails est ajoutée automatiquement ; elle reste entièrement modifiable. Le bouton **Reset DEV** des réglages efface uniquement la base IndexedDB du navigateur.
 
 ## Variables d’environnement
 
@@ -24,7 +24,7 @@ NEXT_PUBLIC_ENABLE_DEMO_SEED=false
 
 - `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` activent Auth anonyme, la synchronisation et Realtime. Sans eux, l’app reste fonctionnelle en mode local.
 - `NEXT_PUBLIC_ENABLE_DEMO_SEED` active explicitement le seed de test. Il reste à `false` pour une base vide.
-- Auth > Providers > Anonymous Sign-Ins doit être activé dans Supabase.
+- Ne placez jamais une clé `secret` ou `service_role` dans une variable `NEXT_PUBLIC_*`.
 
 ## Supabase
 
@@ -43,7 +43,22 @@ supabase start
 supabase db reset
 ```
 
-La migration crée les tables, index, politiques RLS, la fonction sécurisée de jonction par code et la publication Realtime. Voir [docs/DATABASE.md](docs/DATABASE.md).
+La migration crée les tables, index, politiques RLS, la fonction sécurisée de jonction par code, la publication Realtime et le bucket public `profile-photos` protégé en écriture par les membres du séjour. Elle complète aussi les séjours existants avec les boissons par défaut. Voir [docs/DATABASE.md](docs/DATABASE.md).
+
+Dans le Dashboard Supabase :
+
+1. **Authentication > Sign In / Providers** : activer **Allow anonymous sign-ins**.
+2. Depuis le panneau **Connect** du projet : copier l’URL du projet et la clé publique `anon`/`publishable` dans `.env`.
+3. Appliquer les migrations avec `supabase db push` : RLS, Realtime, Storage et les policies sont alors configurés automatiquement.
+4. Pour la production, renseigner **Authentication > URL Configuration** avec l’URL publique de l’application et ses redirect URLs autorisées.
+
+Ne désactivez pas RLS. Aucun fournisseur e-mail ou OAuth n’est nécessaire pour le parcours invité actuel.
+
+## Photos de profil
+
+Dans **Réglages > Participants**, le bouton appareil photo accepte une image JPG, PNG ou WebP de 5 Mo maximum. L’application la recadre en carré, la compresse en WebP 512 × 512, l’envoie dans Supabase Storage puis synchronise son URL avec le crew. L’envoi d’une photo nécessite une connexion ; le reste de l’application reste offline-first.
+
+Pour effacer uniquement les données et conserver tout le schéma, exécuter volontairement [`supabase/RESET_DATA.sql`](supabase/RESET_DATA.sql) dans le SQL Editor Supabase.
 
 ## Développement, build et tests
 

@@ -28,14 +28,14 @@ export function Onboarding() {
       await createTrip(form);
       await refreshActiveTrip();
       void syncEngine.flush();
-    } catch (error) { toast({ message: "Création impossible", detail: error instanceof Error ? error.message : undefined }); }
+    } catch (error) { toast({ message: "Création impossible", detail: error instanceof Error ? error.message : undefined, tone: "error" }); }
     finally { setBusy(false); }
   };
   const join = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
     try { await syncEngine.joinTrip(code); await refreshActiveTrip(); }
-    catch (error) { toast({ message: "Séjour introuvable", detail: error instanceof Error ? error.message : undefined }); }
+    catch (error) { toast({ message: "Séjour introuvable", detail: error instanceof Error ? error.message : undefined, tone: "error" }); }
     finally { setBusy(false); }
   };
 

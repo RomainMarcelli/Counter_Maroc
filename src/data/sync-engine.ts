@@ -2,21 +2,13 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { db } from "./database";
 import { isRemoteNewer, retryDelayMs } from "./queue";
 import { fromRemote, TABLE_BY_ENTITY, toRemote } from "./sync-mappers";
-import { getSupabase } from "./supabase";
+import { ensureSupabaseAuth, getSupabase } from "./supabase";
 import type { EntityBase, EntityType, SyncOperation } from "@/domain/types";
 
 const PRIORITY: Record<EntityType, number> = { trip: 0, participant: 1, drink: 2, drinkEntry: 3, waterEntry: 3 };
 
 function announce(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("marrakech-sync"));
-}
-
-async function ensureAuth(client: SupabaseClient): Promise<string> {
-  const { data } = await client.auth.getSession();
-  if (data.session?.user.id) return data.session.user.id;
-  const { data: signedIn, error } = await client.auth.signInAnonymously();
-  if (error || !signedIn.user) throw error ?? new Error("Impossible de créer une session invitée");
-  return signedIn.user.id;
 }
 
 async function localEntity(entityType: EntityType, id: string): Promise<EntityBase | undefined> {
@@ -73,7 +65,7 @@ class SyncEngine {
     if (this.running || !client || (typeof navigator !== "undefined" && !navigator.onLine)) return;
     this.running = true;
     try {
-      const userId = await ensureAuth(client);
+      const userId = await ensureSupabaseAuth(client);
       await db.settings.delete("syncError");
       const timestamp = new Date().toISOString();
       const operations = (await db.syncQueue.toArray())
@@ -147,20 +139,28 @@ class SyncEngine {
     }
   }
 
-  async joinTrip(shareCode: string): Promise<string> {
+  async pullTrip(tripId: string): Promise<void> {
     const client = getSupabase();
-    if (!client) throw new Error("Configurez Supabase pour rejoindre un séjour partagé.");
-    const userId = await ensureAuth(client);
-    const { data, error } = await client.rpc("join_trip_by_code", { p_share_code: shareCode.trim().toUpperCase() });
-    if (error) throw error;
-    const tripId = String(data);
+    if (!client || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+    await ensureSupabaseAuth(client);
     const tableTypes: EntityType[] = ["trip", "participant", "drink", "drinkEntry", "waterEntry"];
     for (const entityType of tableTypes) {
       const query = client.from(TABLE_BY_ENTITY[entityType]).select("*");
-      const { data: rows, error: selectError } = entityType === "trip" ? await query.eq("id", tripId) : await query.eq("trip_id", tripId);
-      if (selectError) throw selectError;
+      const { data: rows, error } = entityType === "trip" ? await query.eq("id", tripId) : await query.eq("trip_id", tripId);
+      if (error) throw error;
       for (const row of rows ?? []) await mergeRemote(entityType, row);
     }
+    announce();
+  }
+
+  async joinTrip(shareCode: string): Promise<string> {
+    const client = getSupabase();
+    if (!client) throw new Error("Configurez Supabase pour rejoindre un séjour partagé.");
+    const userId = await ensureSupabaseAuth(client);
+    const { data, error } = await client.rpc("join_trip_by_code", { p_share_code: shareCode.trim().toUpperCase() });
+    if (error) throw error;
+    const tripId = String(data);
+    await this.pullTrip(tripId);
     await db.settings.put({ key: "activeTripId", value: tripId });
     await db.settings.put({ key: "supabaseUserId", value: userId });
     this.subscribe(tripId);

@@ -1,7 +1,7 @@
 import { db } from "./database";
 import { queueOperation } from "./queue";
 import { demoSnapshot } from "./seed";
-import { TRIP_TIMEZONE } from "@/domain/constants";
+import { SYSTEM_DRINKS, TRIP_TIMEZONE } from "@/domain/constants";
 import type { Drink, DrinkCategory, DrinkEntry, EntityBase, EntityType, Participant, Trip, UndoBatch, WaterEntry } from "@/domain/types";
 import { createId, createShareCode } from "@/lib/id";
 
@@ -99,7 +99,17 @@ export async function createTrip(input: { name: string; startDate: string; endDa
     updatedAt: timestamp,
     deletedAt: null,
   };
-  const drinks: Drink[] = [];
+  const drinks: Drink[] = SYSTEM_DRINKS.map((drink, index) => ({
+    id: createId(),
+    tripId,
+    ...drink,
+    isAlcohol: true,
+    isSystem: true,
+    sortOrder: index,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    deletedAt: null,
+  }));
   await db.transaction("rw", db.trips, db.participants, db.drinks, db.syncQueue, db.settings, async () => {
     await db.trips.put(trip);
     await db.participants.put(participant);
@@ -125,8 +135,13 @@ export async function addParticipant(tripId: string, name: string, sortOrder: nu
   return participant;
 }
 
-export async function updateParticipant(participant: Participant, changes: Pick<Participant, "name">): Promise<void> {
-  await putWithQueue("participant", { ...participant, ...changes, name: changes.name.trim(), updatedAt: nowIso() });
+export async function updateParticipant(participant: Participant, changes: Partial<Pick<Participant, "name" | "avatarUrl">>): Promise<void> {
+  await putWithQueue("participant", {
+    ...participant,
+    ...changes,
+    name: changes.name === undefined ? participant.name : changes.name.trim(),
+    updatedAt: nowIso(),
+  });
 }
 
 export async function deleteParticipant(participant: Participant): Promise<void> {
@@ -220,7 +235,5 @@ export async function undoBatch(batch: UndoBatch): Promise<void> {
 }
 
 export async function resetLocalData(): Promise<void> {
-  await db.transaction("rw", [db.trips, db.participants, db.drinks, db.drinkEntries, db.waterEntries, db.syncQueue, db.settings], async () => {
-    await Promise.all([db.trips.clear(), db.participants.clear(), db.drinks.clear(), db.drinkEntries.clear(), db.waterEntries.clear(), db.syncQueue.clear(), db.settings.clear()]);
-  });
+  await db.delete();
 }

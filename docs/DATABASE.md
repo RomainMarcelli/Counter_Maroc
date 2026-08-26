@@ -9,6 +9,10 @@
 - `water_entries` : hydratation exclue des classements alcool.
 - `sync_operations` : disponible pour audit/déduplication serveur avancée.
 
+Le bucket Storage public `profile-photos` contient les avatars optimisés. Son arborescence est `trip_id/participant_id/fichier.webp`. Les policies d’écriture vérifient que l’utilisateur authentifié est membre du séjour ; l’URL publique permet ensuite l’affichage direct et la mise en cache sur les téléphones.
+
+La seconde migration complète les séjours existants avec une sélection de boissons système sans dupliquer les noms déjà présents. Lors d’une nouvelle création, cette même sélection est d’abord écrite dans IndexedDB pour rester instantanée, puis synchronisée dans `drinks`.
+
 Les identifiants sont des UUID fournis par les clients. `timestamptz` conserve l’instant absolu ; `Africa/Casablanca` n’est appliqué qu’au regroupement et à l’affichage.
 
 ## Sécurité

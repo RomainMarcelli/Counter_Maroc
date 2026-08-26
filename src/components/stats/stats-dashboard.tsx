@@ -6,12 +6,14 @@ import { useTrip } from "@/components/providers/trip-provider";
 import { calculateStats } from "@/domain/stats";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TemporalAnalysis } from "./temporal-analysis";
+import { ParticipantAvatar } from "@/components/participants/participant-avatar";
 
 export function StatsDashboard() {
   const { trip, participants, drinks, drinkEntries, waterEntries } = useTrip();
   const stats = useMemo(() => trip ? calculateStats(trip, participants, drinks, drinkEntries, waterEntries) : null, [trip, participants, drinks, drinkEntries, waterEntries]);
   if (!trip || !stats) return null;
   if (!stats.totalAlcohol && !stats.totalWater) return <><PageHeader /><EmptyState icon="📊" title="Les stats arrivent" detail="Il faut quelques consommations avant de révéler les tendances du crew." /></>;
+  const participantById = new Map(participants.map((participant) => [participant.id, participant]));
   const weeks = stats.days.reduce<Array<{ total: number; water: number }>>((result, day) => {
     const index = Math.max(0, Math.floor((Date.parse(day.date) - Date.parse(trip.startDate)) / (7 * 86_400_000)));
     result[index] ??= { total: 0, water: 0 };
@@ -34,7 +36,7 @@ export function StatsDashboard() {
 
       <section>
         <SectionTitle icon={<BarChart3 />} title="Classement" subtitle={`${stats.totalAlcohol} verres au total`} />
-        <div className="mt-3 space-y-3">{stats.participants.filter((item) => item.total > 0).map((participant) => <div key={participant.id} className="rounded-2xl border border-sand/50 bg-white/75 p-4"><div className="flex items-center gap-3"><RankIcon rank={participant.rank} /><strong className="flex-1">{participant.name}</strong><span className="font-black">{participant.total} <small className="text-morocco/45">· {participant.percentage}%</small></span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-sand/35"><div className="h-full rounded-full bg-morocco" style={{ width: `${participant.percentage}%` }} /></div><p className="mt-2 text-right text-[10px] font-bold text-morocco/45">{participant.averagePerDay}/jour</p></div>)}</div>
+        <div className="mt-3 space-y-3">{stats.participants.filter((item) => item.total > 0).map((participant) => <div key={participant.id} className="rounded-2xl border border-sand/50 bg-white/75 p-4"><div className="flex items-center gap-3"><RankIcon rank={participant.rank} /><ParticipantAvatar participant={participantById.get(participant.id) ?? { name: participant.name, avatarUrl: null }} size="sm" /><strong className="flex-1">{participant.name}</strong><span className="font-black">{participant.total} <small className="text-morocco/45">· {participant.percentage}%</small></span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-sand/35"><div className="h-full rounded-full bg-morocco" style={{ width: `${participant.percentage}%` }} /></div><p className="mt-2 text-right text-[10px] font-bold text-morocco/45">{participant.averagePerDay}/jour</p></div>)}</div>
       </section>
 
       <section>

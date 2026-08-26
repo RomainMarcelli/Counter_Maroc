@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito_Sans } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/app-providers";
+import Script from "next/script";
 
 const bodyFont = Nunito_Sans({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 const displayFont = Fraunces({ subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -26,6 +27,23 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="fr" suppressHydrationWarning>
+      <head>
+        {process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_ENABLE_PWA !== "true" ? <Script id="clear-stale-development-pwa" strategy="beforeInteractive">{`
+          if (!navigator.webdriver) {
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(function (registrations) {
+                registrations.forEach(function (registration) { registration.unregister(); });
+              });
+            }
+            if ('caches' in window) {
+              caches.keys().then(function (keys) {
+                keys.filter(function (key) { return key.indexOf('marrakech-crew-') === 0; })
+                  .forEach(function (key) { caches.delete(key); });
+              });
+            }
+          }
+        `}</Script> : null}
+      </head>
       <body className={`${bodyFont.variable} ${displayFont.variable}`}>
         <AppProviders>{children}</AppProviders>
       </body>

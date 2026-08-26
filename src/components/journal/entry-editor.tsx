@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";
+import { useActionDialog } from "@/components/providers/action-dialog-provider";
 import type { DrinkEntry, WaterEntry } from "@/domain/types";
 import { deleteDrinkEntry, deleteWaterEntry, updateDrinkEntry, updateWaterEntry } from "@/data/repository";
 import { isoToZonedInput, zonedInputToIso } from "@/lib/timezone";
@@ -14,6 +15,7 @@ export type JournalSelection = { kind: "drink"; entry: DrinkEntry } | { kind: "w
 export function EntryEditor({ selection, onClose }: { selection: JournalSelection | null; onClose: () => void }) {
   const { trip, activeParticipants, activeDrinks } = useTrip();
   const toast = useToast();
+  const { confirm: confirmAction } = useActionDialog();
   const [participantId, setParticipantId] = useState("");
   const [drinkId, setDrinkId] = useState("");
   const [consumedAt, setConsumedAt] = useState("");
@@ -33,9 +35,18 @@ export function EntryEditor({ selection, onClose }: { selection: JournalSelectio
     onClose();
   };
   const remove = async () => {
-    if (!window.confirm("Supprimer cette consommation ?")) return;
+    const confirmed = await confirmAction({
+      eyebrow: "Journal du séjour",
+      title: "Supprimer cette consommation ?",
+      description: "Elle disparaîtra du Journal, des compteurs et des statistiques sur tous les téléphones après synchronisation.",
+      confirmLabel: selection.kind === "drink" ? "Supprimer le verre" : "Supprimer l’eau",
+      cancelLabel: "Garder l’entrée",
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!confirmed) return;
     if (selection.kind === "drink") await deleteDrinkEntry(selection.entry); else await deleteWaterEntry(selection.entry);
-    toast({ message: "Consommation supprimée", detail: "La suppression sera synchronisée" });
+    toast({ message: "Consommation supprimée", detail: navigator.onLine ? "Suppression en cours de synchronisation." : "Suppression conservée hors ligne." });
     onClose();
   };
   return (

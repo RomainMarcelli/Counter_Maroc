@@ -49,7 +49,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (activeTripId) syncEngine.subscribe(activeTripId);
+    if (!activeTripId) return;
+    syncEngine.subscribe(activeTripId);
+    void syncEngine.pullTrip(activeTripId).catch(() => undefined);
   }, [activeTripId]);
 
   const activeParticipants = useMemo(() => participants.filter((item) => !item.deletedAt), [participants]);

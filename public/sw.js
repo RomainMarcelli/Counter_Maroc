@@ -1,5 +1,5 @@
 /* Marrakech Crew: app-shell and runtime cache. IndexedDB remains the data source. */
-const CACHE = "marrakech-crew-v1";
+const CACHE = "marrakech-crew-v2";
 const SHELL = ["/", "/journal", "/stats", "/hall-of-fame", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
