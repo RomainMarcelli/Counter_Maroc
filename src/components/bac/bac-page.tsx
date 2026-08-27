@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Info, RefreshCw, Settings2, UsersRound } from "lucide-react";
+import { ChevronRight, Clock3, Info, RefreshCw, Settings2, UsersRound } from "lucide-react";
 import clsx from "clsx";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useBac } from "@/components/providers/bac-provider";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { syncEngine } from "@/data/sync-engine";
 import { BacDetailSheet } from "./bac-detail-sheet";
 import { BacProfileSheet } from "./bac-profile-sheet";
-import { BAC_DISCLAIMER, formatBac } from "@/domain/bac";
+import { BAC_DISCLAIMER, formatBac, formatTripTime } from "@/domain/bac";
 import type { Participant } from "@/domain/types";
 
 /**
@@ -24,7 +24,7 @@ export function BacPage() {
   const { trip, actorId } = useTrip();
   // Tout vient du calcul partagé : la carte, la modale et le résumé de l’écran Rapide
   // lisent exactement la même estimation, au même instant.
-  const { rows, refresh } = useBac();
+  const { rows, now, refresh } = useBac();
   const [detail, setDetail] = useState<Participant | null>(null);
   const [config, setConfig] = useState<Participant | null>(null);
   const [reloading, setReloading] = useState(false);
@@ -54,6 +54,9 @@ export function BacPage() {
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-terra">Estimation théorique</p>
           <h1 className="font-display text-4xl font-bold">Alcoolémie estimée</h1>
           <p className="mt-2 text-sm text-morocco/60">Recalculée à partir des verres du Journal, jamais stockée.</p>
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sand/40 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-morocco/70">
+            <Clock3 size={13} className="text-terra" />Maintenant · {formatTripTime(new Date(now).toISOString())}
+          </p>
         </div>
         <button
           type="button"

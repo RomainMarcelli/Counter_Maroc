@@ -116,6 +116,17 @@ button {
   --drink-tint: #E9D6B5;
 }
 
+/* Défilement des prénoms pendant le tirage d’un gage : uniquement transform et
+   opacity, et neutralisé plus bas par prefers-reduced-motion. */
+.draw-flip {
+  animation: draw-flip 90ms ease-out both;
+}
+
+@keyframes draw-flip {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
 /* Confirmation très courte d’une sélection (grille des participants). */
 .select-pop {
   animation: select-pop 180ms ease-out both;

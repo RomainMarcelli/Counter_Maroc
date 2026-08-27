@@ -59,9 +59,10 @@ export function BacDetailSheet({ participant, onClose }: { participant: Particip
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
             <article className="rounded-3xl bg-morocco p-4 text-ivory">
-              <p className="text-[10px] font-black uppercase tracking-wider text-sand">Actuellement</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-sand">Maintenant · {formatTripTime(new Date(now).toISOString())}</p>
               <strong className="mt-2 block font-display text-3xl">≈ {formatBac(detail.stats.current.estimatedGPerL)}</strong>
               <span className="text-xs font-bold text-sand">g/L estimés</span>
+              <span className="mt-1 block text-[10px] font-black uppercase tracking-wider text-sand/70">{row?.absorbing ? "Absorption en cours" : detail.stats.current.estimatedGPerL > 0 ? "Phase d’élimination estimée" : "Rien à éliminer"}</span>
             </article>
             <article className="rounded-3xl border border-sand/60 bg-white p-4">
               <p className="text-[10px] font-black uppercase tracking-wider text-terra">Pic estimé</p>

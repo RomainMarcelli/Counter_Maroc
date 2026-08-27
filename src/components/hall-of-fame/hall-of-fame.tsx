@@ -58,7 +58,9 @@ export function HallOfFame() {
     return <><Header /><HallLinks /><EmptyState icon={<Trophy size={34} />} title="Le Hall of Fame se prépare" detail="Ajoutez au moins trois verres pour débloquer le podium et les premiers trophées." /></>;
   }
 
-  const podium = stats.participants.filter((item) => item.total > 0).slice(0, 3);
+  // Classement complet : le podium prend les trois premiers, et rappelle le reste
+  // du crew juste en dessous plutôt que de le faire disparaître.
+  const podium = stats.participants.filter((item) => item.total > 0);
   const participantById = new Map(participants.map((participant) => [participant.id, participant]));
 
   const shareCanvas = async (canvas: HTMLCanvasElement, fileName: string, title: string, text: string) => {

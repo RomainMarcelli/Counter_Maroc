@@ -98,7 +98,16 @@ export type ChallengeTarget =
   | "water_between_drinks"
   | "full_round"
   | "group_photo"
-  | "category_variety";
+  | "category_variety"
+  // Découverte et variété : jamais de vitesse ni de quantité.
+  | "cocktail_variety"
+  | "new_drink"
+  | "all_categories"
+  | "other_favorite"
+  | "signature_drink"
+  | "own_favorite"
+  | "different_from_yesterday"
+  | "same_cocktail_round";
 
 export interface Challenge extends EntityBase {
   title: string;

@@ -176,3 +176,33 @@ describe("calculateParticipantBacStats", () => {
     expect(stats.dailyPeaks).toEqual([]);
   });
 });
+
+describe("estimation à l’instant présent", () => {
+  const profile = { weightKg: 80, distributionRatio: 0.68, eliminationRate: 0.15, absorptionMinutes: 30 };
+  const at = (iso: string) => Date.parse(iso);
+
+  it("recalcule pour l’heure de consultation, pas pour l’heure du verre", () => {
+    // Vodka 12,6 g à 13:00 ; on consulte à 15:23, soit 2 h 23 plus tard.
+    const events = [{ consumedAt: "2026-08-27T11:00:00.000Z", pureAlcoholGrams: 12.6 }];
+    const auVerre = estimateBacAt({ profile, events, at: at("2026-08-27T11:30:00.000Z") }).estimatedGPerL;
+    const maintenant = estimateBacAt({ profile, events, at: at("2026-08-27T13:23:00.000Z") }).estimatedGPerL;
+    // Le pic d’absorption est atteint à 13:30 ; à 15:23 il reste bien moins.
+    expect(auVerre).toBeGreaterThan(maintenant);
+    expect(maintenant).toBeCloseTo(Math.max(0, 12.6 / (80 * 0.68) - 0.15 * (113 / 60)), 3);
+  });
+
+  it("décroît régulièrement pendant la phase d’élimination", () => {
+    const events = [{ consumedAt: "2026-08-27T11:00:00.000Z", pureAlcoholGrams: 34 }];
+    const valeurs = ["12:00", "13:00", "14:00"].map((heure) =>
+      estimateBacAt({ profile, events, at: at(`2026-08-27T${heure}:00.000Z`) }).estimatedGPerL);
+    expect(valeurs[0]).toBeGreaterThan(valeurs[1]);
+    expect(valeurs[1]).toBeGreaterThan(valeurs[2]);
+  });
+
+  it("ne dépend pas du fuseau : seul l’écart d’instants compte", () => {
+    const events = [{ consumedAt: "2026-08-27T11:00:00.000Z", pureAlcoholGrams: 12.6 }];
+    const parIso = estimateBacAt({ profile, events, at: "2026-08-27T13:23:00.000Z" }).estimatedGPerL;
+    const parEpoch = estimateBacAt({ profile, events, at: at("2026-08-27T13:23:00.000Z") }).estimatedGPerL;
+    expect(parIso).toBe(parEpoch);
+  });
+});

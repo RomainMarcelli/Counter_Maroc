@@ -1,4 +1,5 @@
-import { deviceTimeZone, zonedDayKey, zonedInputToIso } from "@/lib/timezone";
+import { deviceTimeZone } from "@/lib/timezone";
+import { getTripDayKey, getTripDayRange } from "@/lib/trip-day";
 import { buildBacCurve, estimateBacAt, findPeakBac, isUsableProfile, toMillis } from "./widmark";
 import type { AlcoholEvent, BacPeak, BacPoint, BacProfile, DailyBacPeak, ParticipantBacStats } from "./types";
 
@@ -16,13 +17,17 @@ export function buildBacTimeline({ profile, events, from, to }: { profile: BacPr
   });
 }
 
-/** Bornes de journée locales entre deux instants, pour ne pas rater un pic à cheval sur minuit. */
+/**
+ * Bornes des journées de voyage entre deux instants : 08:00 locale d'un jour à
+ * 08:00 le lendemain. Sans ces points de rupture, un pic survenu juste avant le
+ * changement de journée serait rattaché au mauvais jour.
+ */
 function dayBoundaries(fromMs: number, toMs: number, timezone: string = deviceTimeZone()): number[] {
   const marks: number[] = [];
   for (let cursor = fromMs; cursor <= toMs + DAY_MS && marks.length < 400; cursor += DAY_MS) {
-    const key = zonedDayKey(new Date(cursor).toISOString(), timezone);
-    const midnight = Date.parse(zonedInputToIso(`${key}T00:00`, timezone));
-    if (Number.isFinite(midnight) && midnight >= fromMs && midnight <= toMs) marks.push(midnight);
+    const key = getTripDayKey(cursor, timezone);
+    const start = Date.parse(getTripDayRange(key, timezone).start);
+    if (Number.isFinite(start) && start >= fromMs && start <= toMs && !marks.includes(start)) marks.push(start);
   }
   return marks;
 }
@@ -45,7 +50,7 @@ export function calculateParticipantBacStats({ profile, events, now, timezone = 
   const peakByDay = new Map<string, BacPeak>();
   for (const point of curve) {
     if (point.gPerL <= 0) continue;
-    const day = zonedDayKey(point.at, timezone);
+    const day = getTripDayKey(point.at, timezone);
     const known = peakByDay.get(day);
     if (!known || point.gPerL > known.gPerL) peakByDay.set(day, { at: point.at, gPerL: point.gPerL });
   }

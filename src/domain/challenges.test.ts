@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateChallengeProgress, effectiveChallengeStatus } from "./challenges";
+import { CHALLENGE_PRESETS, calculateChallengeProgress, effectiveChallengeStatus } from "./challenges";
 import type { Challenge, Drink, DrinkEntry, Participant, WaterEntry } from "./types";
 
 const base = { tripId: "trip", createdAt: "2026-08-27T08:00:00.000Z", updatedAt: "2026-08-27T08:00:00.000Z", deletedAt: null };
@@ -35,5 +35,20 @@ describe("calculateChallengeProgress", () => {
     const result = calculateChallengeProgress(done, people, drinks, [], []);
     expect(result.completed).toBe(true);
     expect(effectiveChallengeStatus(done, result)).toBe("completed");
+  });
+});
+
+describe("portée des défis prédéfinis", () => {
+  it("garde les défis collectifs collectifs et les individuels individuels", () => {
+    const byId = new Map(CHALLENGE_PRESETS.map((preset) => [preset.id, preset]));
+    // « Le crew entier » demande une tournée pour tout le groupe : il ne peut pas
+    // être attribué à une seule personne.
+    expect(byId.get("full-round")?.defaultScope).toBe("group");
+    expect(byId.get("team-cocktail")?.defaultScope).toBe("group");
+    expect(byId.get("hydration")?.defaultScope).toBe("individual");
+    expect(byId.get("cocktail-explorer")?.defaultScope).toBe("individual");
+    // Chaque preset déclare explicitement sa portée, aucun identifiant en double.
+    expect(CHALLENGE_PRESETS.every((preset) => preset.defaultScope === "group" || preset.defaultScope === "individual")).toBe(true);
+    expect(new Set(CHALLENGE_PRESETS.map((preset) => preset.id)).size).toBe(CHALLENGE_PRESETS.length);
   });
 });

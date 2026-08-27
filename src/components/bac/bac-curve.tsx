@@ -57,7 +57,12 @@ export function BacCurve({ points, markers = [], now, timezone = deviceTimeZone(
       })}
       <path d={chart.area} fill="#1E4A3A" fillOpacity={0.1} />
       <path d={chart.line} fill="none" stroke="#1E4A3A" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      {chart.nowX === null ? null : <line x1={chart.nowX} x2={chart.nowX} y1={PADDING.top} y2={HEIGHT - PADDING.bottom} stroke="#B5543C" strokeWidth={1.5} strokeDasharray="3 3"><title>Maintenant</title></line>}
+      {chart.nowX === null ? null : (
+        <g>
+          <line x1={chart.nowX} x2={chart.nowX} y1={PADDING.top} y2={HEIGHT - PADDING.bottom} stroke="#B5543C" strokeWidth={1.5} strokeDasharray="3 3"><title>Maintenant</title></line>
+          <text x={chart.nowX} y={PADDING.top - 3} textAnchor={chart.nowX > 250 ? "end" : "middle"} className="fill-terra" style={{ fontSize: 8, fontWeight: 900, letterSpacing: 0.4 }}>MAINTENANT</text>
+        </g>
+      )}
       {chart.dots.map((dot) => (
         <circle key={`${dot.at}-${dot.label}`} cx={chart.x(dot.at)} cy={HEIGHT - PADDING.bottom + 6} r={2.5} fill="#B5543C">
           <title>{dot.label}</title>

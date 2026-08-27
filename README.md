@@ -69,9 +69,26 @@ automatiquement — il n’y a jamais à le ressaisir. `join_trip_by_code` étan
 accepter deux fois la même invitation ne crée pas un second membership. L’ancien format
 `/?join=CODE` des QR Codes déjà distribués reste accepté.
 
-## Photos de profil
+## Photos
 
-Dans **Réglages > Participants**, le bouton appareil photo accepte une image JPG, PNG ou WebP de 5 Mo maximum. L’application la recadre en carré, la compresse en WebP 512 × 512, l’envoie dans Supabase Storage puis synchronise son URL avec le crew. L’envoi d’une photo nécessite une connexion ; le reste de l’application reste offline-first.
+Deux usages, un seul pipeline : les avatars dans **Réglages → Participants**, et les
+souvenirs du séjour depuis **Récaps → Photo**.
+
+Le sélecteur accepte JPEG, PNG, WebP, **HEIC et HEIF**, et ne force pas l’attribut
+`capture` : iOS propose donc aussi bien la photothèque que l’appareil photo. Avant
+l’envoi, l’image est décodée avec son orientation EXIF, redimensionnée — 512 px pour un
+avatar, 1800 px pour un souvenir — puis compressée en WebP, avec repli JPEG.
+
+Les deux buckets `profile-photos` et `trip-photos` sont **privés**. L’affichage passe par
+des URLs signées d’une heure, mises en cache côté client ; une signature périmée fait
+redemander la sienne à la photo concernée sans casser le reste de la galerie. Les policies
+Storage n’autorisent que les membres du séjour, reconnus par le `trip_id` en tête du
+chemin de l’objet.
+
+L’envoi ne demande **pas** de connexion : hors ligne, la photo part dans une file locale
+(`photoUploads`, plafonnée à 30 Mo), l’application affiche « Photo enregistrée sur
+l’iPhone », et l’envoi se termine seul au retour du réseau. Une suppression hors ligne est
+rejouée de la même façon.
 
 Pour effacer uniquement les données et conserver tout le schéma, exécuter volontairement [`supabase/RESET_DATA.sql`](supabase/RESET_DATA.sql) dans le SQL Editor Supabase.
 
