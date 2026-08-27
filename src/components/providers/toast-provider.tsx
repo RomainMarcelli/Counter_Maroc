@@ -9,7 +9,7 @@ export const TOAST_DURATION_MS = 6_000;
 interface ToastInput {
   message: string;
   detail?: string;
-  icon?: string;
+  icon?: React.ReactNode;
   actionLabel?: string;
   onAction?: () => void | Promise<void>;
   tone?: "success" | "error" | "info";
@@ -59,7 +59,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={show}>
       {children}
       {toast ? (
-        <div key={toast.id} className={`card-enter zellige-card fixed inset-x-4 z-[90] mx-auto flex max-w-md items-center gap-2.5 overflow-hidden rounded-[22px] border px-3 py-3 text-ivory shadow-2xl ${toast.tone === "error" ? "border-terra/30 bg-terra" : "border-sand/20 bg-morocco"}`} style={{ bottom: "calc(88px + env(safe-area-inset-bottom))" }} role="status" aria-live={toast.tone === "error" ? "assertive" : "polite"}>
+        <div key={toast.id} className={`card-enter zellige-card fixed inset-x-4 z-[90] mx-auto flex max-w-md items-center gap-2.5 overflow-hidden rounded-[22px] border px-3 py-3 text-ivory shadow-2xl ${toast.tone === "error" ? "border-terra/30 bg-terra" : "border-sand/20 bg-morocco"}`} style={{ bottom: "calc(var(--bottom-nav-height) + 14px + env(safe-area-inset-bottom))" }} role="status" aria-live={toast.tone === "error" ? "assertive" : "polite"}>
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xl text-sand" aria-hidden="true">{toast.icon ?? (toast.tone === "error" ? <AlertCircle size={21} /> : toast.tone === "info" ? <Info size={21} /> : <CheckCircle2 size={21} />)}</span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold leading-snug">{toast.message}</p>

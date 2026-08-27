@@ -27,7 +27,9 @@ describe("calculateStats", () => {
       entry("4", "romain", "beer", "2026-09-08T21:30:00.000Z"),
     ];
     const waters: WaterEntry[] = [{ ...base, id: "w1", participantId: "lucas", consumedAt: "2026-09-07T18:00:00.000Z", actionBy: "user", deviceId: "device", roundId: null }];
-    const stats = calculateStats(trip, participants, drinks, entries, waters);
+    // Fuseau épinglé : le pic horaire dépend du fuseau, et l’application suit
+    // désormais celui de l’appareil — le test ne doit pas dépendre de la machine.
+    const stats = calculateStats(trip, participants, drinks, entries, waters, "Africa/Casablanca");
     expect(stats.totalAlcohol).toBe(4);
     expect(stats.totalWater).toBe(1);
     expect(stats.participants[0]).toMatchObject({ name: "Romain", total: 3, rank: 1, percentage: 75 });
@@ -45,5 +47,17 @@ describe("calculateStats", () => {
   it("gère les ex æquo dans le classement", () => {
     const stats = calculateStats(trip, participants, drinks, [entry("1", "romain", "mojito", "2026-09-07T21:10:00.000Z"), entry("2", "lucas", "beer", "2026-09-07T21:12:00.000Z")], []);
     expect(stats.participants.map((item) => item.rank)).toEqual([1, 1]);
+  });
+
+  it("expose des clés de badges vectoriels sans données d'emoji", () => {
+    const entries = [
+      entry("1", "romain", "mojito", "2026-09-07T21:10:00.000Z"),
+      entry("2", "romain", "mojito", "2026-09-07T21:20:00.000Z"),
+      entry("3", "lucas", "beer", "2026-09-07T21:30:00.000Z"),
+    ];
+    const trophies = calculateStats(trip, participants, drinks, entries, []).trophies;
+
+    expect(trophies.map((trophy) => trophy.iconKey)).toEqual(expect.arrayContaining(["top-drinker", "favorite-drink"]));
+    expect(trophies.every((trophy) => !("icon" in trophy))).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 /* Marrakech Crew: app-shell and runtime cache. IndexedDB remains the data source. */
-const CACHE = "marrakech-crew-v2";
-const SHELL = ["/", "/journal", "/stats", "/hall-of-fame", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE = "marrakech-crew-v4";
+const SHELL = ["/", "/journal", "/alcoolemie", "/stats", "/hall-of-fame", "/join", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

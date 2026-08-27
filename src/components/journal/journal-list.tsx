@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, ListChecks, PencilLine, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Droplets, ListChecks, PencilLine, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
 import clsx from "clsx";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { useActionDialog } from "@/components/providers/action-dialog-provider";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DrinkIcon, DrinkIconGlyph } from "@/components/drinks/drink-icon";
 import { EntryEditor, type JournalSelection } from "./entry-editor";
 import { BulkEditSheet } from "./bulk-edit-sheet";
+import { SwipeRow } from "./swipe-row";
 import { deleteEntries, restoreEntries } from "@/data/repository";
 import { formatDateKey, formatTripDateTime, zonedDayKey } from "@/lib/timezone";
 import type { UndoBatch } from "@/domain/types";
@@ -27,6 +29,8 @@ export function JournalList() {
   const [picked, setPicked] = useState<string[]>([]);
   const [person, setPerson] = useState("all");
   const [editing, setEditing] = useState<UndoBatch | null>(null);
+  /** Ligne dont le tiroir « Supprimer » est ouvert : une seule à la fois. */
+  const [swiped, setSwiped] = useState<string | null>(null);
   const participantById = new Map(participants.map((item) => [item.id, item]));
   const participantByUserId = new Map(participants.filter((item) => item.userId).map((item) => [item.userId as string, item]));
   const drinkById = new Map(drinks.map((item) => [item.id, item]));
@@ -36,7 +40,7 @@ export function JournalList() {
       ...drinkEntries.filter((entry) => !entry.deletedAt).map((entry) => ({ kind: "drink" as const, entry, consumedAt: entry.consumedAt })),
       ...waterEntries.filter((entry) => !entry.deletedAt).map((entry) => ({ kind: "water" as const, entry, consumedAt: entry.consumedAt })),
     ]
-      .filter((row) => day === "all" || zonedDayKey(row.consumedAt, trip.timezone) === day)
+      .filter((row) => day === "all" || zonedDayKey(row.consumedAt) === day)
       .filter((row) => person === "all" || row.entry.participantId === person)
       .sort((a, b) => b.consumedAt.localeCompare(a.consumedAt));
   }, [trip, drinkEntries, waterEntries, day, person]);
@@ -50,7 +54,7 @@ export function JournalList() {
   }, [visibleKey]);
 
   if (!trip) return null;
-  const days = [...new Set([...drinkEntries, ...waterEntries].filter((entry) => !entry.deletedAt).map((entry) => zonedDayKey(entry.consumedAt, trip.timezone)))].sort().reverse();
+  const days = [...new Set([...drinkEntries, ...waterEntries].filter((entry) => !entry.deletedAt).map((entry) => zonedDayKey(entry.consumedAt)))].sort().reverse();
   const pickedSet = new Set(picked);
   const allPicked = rows.length > 0 && picked.length === rows.length;
 
@@ -61,6 +65,29 @@ export function JournalList() {
     drinkEntryIds: rows.filter((row) => row.kind === "drink" && pickedSet.has(rowId(row.kind, row.entry.id))).map((row) => row.entry.id),
     waterEntryIds: rows.filter((row) => row.kind === "water" && pickedSet.has(rowId(row.kind, row.entry.id))).map((row) => row.entry.id),
   });
+
+  /**
+   * Suppression au swipe : pas de confirmation, c’est tout l’intérêt du geste.
+   * Le filet de sécurité est le même que partout ailleurs — ANNULER dans le snackbar,
+   * qui restaure l’entrée immédiatement, hors ligne comme en ligne.
+   */
+  const removeOne = async (row: { kind: RowKind; entry: { id: string } }) => {
+    const batch: UndoBatch = row.kind === "drink"
+      ? { drinkEntryIds: [row.entry.id], waterEntryIds: [] }
+      : { drinkEntryIds: [], waterEntryIds: [row.entry.id] };
+    const participant = participantById.get((row.entry as { participantId?: string }).participantId ?? "");
+    const drink = row.kind === "drink" ? drinkById.get((row.entry as { drinkId?: string }).drinkId ?? "") : null;
+    const what = row.kind === "water" ? "Eau" : drink?.name ?? "Consommation";
+    await deleteEntries(batch);
+    setSwiped(null);
+    toast({
+      message: participant ? `${what} de ${participant.name} supprimé${row.kind === "water" ? "e" : ""}` : `${what} supprimée`,
+      icon: <Trash2 size={19} />,
+      detail: navigator.onLine ? "Suppression · synchronisation en attente" : "Suppression conservée sur ce téléphone",
+      actionLabel: "Annuler",
+      onAction: () => restoreEntries(batch),
+    });
+  };
 
   const removePicked = async () => {
     const batch = pickedBatch();
@@ -80,7 +107,7 @@ export function JournalList() {
     stopPicking();
     toast({
       message: total === 1 ? "1 consommation supprimée" : `${total} consommations supprimées`,
-      icon: "🗑️",
+      icon: <Trash2 size={19} />,
       detail: navigator.onLine ? "Suppression · synchronisation en attente" : "Suppression conservée sur ce téléphone",
       actionLabel: "Annuler",
       onAction: () => restoreEntries(batch),
@@ -94,12 +121,12 @@ export function JournalList() {
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-4xl font-bold">Journal</h1>
           {rows.length ? (
-            <button onClick={() => (picking ? stopPicking() : setPicking(true))} aria-pressed={picking} className={clsx("tap-bump flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-black transition", picking ? "border-morocco bg-morocco text-ivory" : "border-sand bg-white text-morocco")}>
+            <button onClick={() => { setSwiped(null); if (picking) stopPicking(); else setPicking(true); }} aria-pressed={picking} className={clsx("tap-bump flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-black transition", picking ? "border-morocco bg-morocco text-ivory" : "border-sand bg-white text-morocco")}>
               <ListChecks size={16} />{picking ? "Terminer" : "Sélectionner"}
             </button>
           ) : null}
         </div>
-        <p className="mt-2 text-sm text-morocco/60">{picking ? "Touchez les verres à corriger, puis supprimez-les d’un coup." : `Chaque heure est conservée dans le fuseau ${trip.timezone}.`}</p>
+        <p className="mt-2 text-sm text-morocco/60">{picking ? "Touchez les verres à corriger, puis supprimez-les d’un coup." : "Touchez pour modifier, glissez vers la gauche pour supprimer."}</p>
       </header>
       {picking ? (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-sand/70 bg-sand/25 px-3 py-2">
@@ -118,26 +145,39 @@ export function JournalList() {
         // `actionBy` est le compte qui a saisi la ligne : on l’affiche via le
         // participant qu’il incarne, et on reste muet si personne ne correspond.
         const addedBy = participantByUserId.get(row.entry.actionBy)?.name ?? null;
+        const swipedOpen = swiped === key;
         return (
-          <button
+          <SwipeRow
             key={key}
-            onClick={() => (picking ? toggleRow(key) : setSelection({ kind: row.kind, entry: row.entry } as JournalSelection))}
-            role={picking ? "checkbox" : undefined}
-            aria-checked={picking ? checked : undefined}
-            className={clsx("card-enter flex min-h-[72px] w-full items-center gap-3 rounded-2xl border p-3 text-left shadow-sm transition", checked ? "border-terra bg-terra/5" : "border-sand/50 bg-white/75")}
+            open={swipedOpen}
+            onOpenChange={(next) => setSwiped(next ? key : null)}
+            onDelete={() => void removeOne(row)}
+            deleteLabel={`Supprimer ${label}`}
+            disabled={picking}
           >
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sand/35 text-xl">{row.kind === "water" ? "💧" : drink?.icon ?? "🍹"}</span>
-            <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{label}</strong><span className="mt-1 block truncate text-xs font-bold text-morocco/50">{formatTripDateTime(row.consumedAt, trip.timezone)}{addedBy ? ` · ajouté par ${addedBy}` : ""}</span></span>
-            {picking
-              ? <span className={clsx("flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition", checked ? "border-terra bg-terra text-ivory" : "border-sand bg-white")} aria-hidden="true">{checked ? <Check size={14} strokeWidth={3.5} /> : null}</span>
-              : <ChevronRight size={18} className="text-morocco/35" />}
-          </button>
+            <button
+              onClick={() => {
+                // Une ligne ouverte se referme d’abord : le tap ne déclenche pas l’édition par surprise.
+                if (swipedOpen) { setSwiped(null); return; }
+                if (picking) toggleRow(key); else setSelection({ kind: row.kind, entry: row.entry } as JournalSelection);
+              }}
+              role={picking ? "checkbox" : undefined}
+              aria-checked={picking ? checked : undefined}
+              className={clsx("card-enter flex min-h-[72px] w-full items-center gap-3 rounded-2xl border p-3 text-left shadow-sm transition", checked ? "border-terra bg-terra/5" : "border-sand/50 bg-white/75")}
+            >
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sand/35 text-morocco/75">{row.kind === "water" ? <Droplets size={20} /> : drink ? <DrinkIcon drink={drink} size={20} /> : <DrinkIconGlyph iconKey="generic" size={20} />}</span>
+              <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{label}</strong><span className="mt-1 block truncate text-xs font-bold text-morocco/50">{formatTripDateTime(row.consumedAt)}{addedBy ? ` · ajouté par ${addedBy}` : ""}</span></span>
+              {picking
+                ? <span className={clsx("flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition", checked ? "border-terra bg-terra text-ivory" : "border-sand bg-white")} aria-hidden="true">{checked ? <Check size={14} strokeWidth={3.5} /> : null}</span>
+                : <ChevronRight size={18} className="text-morocco/35" />}
+            </button>
+          </SwipeRow>
         );
-      })}</div> : <EmptyState icon="📖" title="Le journal est calme" detail="Ajoutez un premier verre depuis l’écran Rapide. Il apparaîtra ici instantanément, même hors ligne." />}
+      })}</div> : <EmptyState icon={<BookOpen size={30} />} title="Le journal est calme" detail="Ajoutez un premier verre depuis l’écran Rapide. Il apparaîtra ici instantanément, même hors ligne." />}
       {picking && picked.length ? (
         <>
           <div className="h-24" aria-hidden="true" />
-          <div className="card-enter fixed inset-x-4 z-[80] mx-auto flex max-w-md items-center gap-3 rounded-[22px] border border-sand/20 bg-morocco px-3 py-3 text-ivory shadow-2xl" style={{ bottom: "calc(88px + env(safe-area-inset-bottom))" }}>
+          <div className="card-enter fixed inset-x-4 z-[80] mx-auto flex max-w-md items-center gap-3 rounded-[22px] border border-sand/20 bg-morocco px-3 py-3 text-ivory shadow-2xl" style={{ bottom: "calc(var(--bottom-nav-height) + 14px + env(safe-area-inset-bottom))" }}>
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-black text-sand" aria-hidden="true">{picked.length}</span>
             <p className="min-w-0 flex-1 text-sm font-extrabold leading-snug">verre{picked.length > 1 ? "s" : ""} sélectionné{picked.length > 1 ? "s" : ""}</p>
             <button onClick={() => setEditing(pickedBatch())} className="tap-bump flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-white/10 px-3 text-xs font-black uppercase tracking-wider text-sand"><PencilLine size={15} />Corriger</button>

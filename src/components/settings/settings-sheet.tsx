@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
-import { Activity, Camera, Copy, ImageOff, LoaderCircle, LogOut, Pencil, Plus, Trash2, UserRound } from "lucide-react";
+import { Activity, Camera, Check, Copy, ImageOff, LoaderCircle, LogOut, Pencil, Plus, QrCode, Share2, Trash2, UserRound } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ParticipantAvatar } from "@/components/participants/participant-avatar";
 import { useTrip } from "@/components/providers/trip-provider";
@@ -13,6 +11,9 @@ import { addParticipant, deleteDrink, deleteParticipant, resetLocalData, updateP
 import { useAuth } from "@/components/providers/auth-provider";
 import type { Drink, Participant } from "@/domain/types";
 import { DrinkFormSheet } from "@/components/quick/drink-form-sheet";
+import { DrinkIcon } from "@/components/drinks/drink-icon";
+import { InviteSheet } from "./invite-sheet";
+import { formatTripRange } from "@/lib/timezone";
 import { removeParticipantPhoto, uploadParticipantPhoto } from "@/data/profile-photos";
 import { BacProfileSheet } from "@/components/bac/bac-profile-sheet";
 import { TrashSection } from "./trash-section";
@@ -24,23 +25,30 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   const { account, accountRequired, signOut } = useAuth();
   const toast = useToast();
   const { confirm: confirmAction, prompt: promptAction } = useActionDialog();
-  const [qr, setQr] = useState("");
   const [newName, setNewName] = useState("");
   const [editingDrink, setEditingDrink] = useState<Drink | null>(null);
   const [partyMode, setPartyMode] = useState(false);
   const [uploadingParticipantId, setUploadingParticipantId] = useState<string | null>(null);
   const [bacParticipant, setBacParticipant] = useState<Participant | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   useEffect(() => {
     setPartyMode(localStorage.getItem("partyMode") === "true");
   }, [open]);
-  useEffect(() => {
-    if (!trip) return;
-    const url = `${window.location.origin}/?join=${encodeURIComponent(trip.shareCode)}`;
-    void QRCode.toDataURL(url, { width: 320, margin: 1, color: { dark: "#1E4A3A", light: "#FFF8EC" } }).then(setQr);
-  }, [trip]);
   if (!trip) return null;
   const myParticipant = activeParticipants.find((participant) => participant.id === actorId) ?? null;
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(trip.shareCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 1800);
+      toast({ message: "Code copié" });
+    } catch {
+      toast({ message: "Copie impossible", detail: "Ouvre le QR Code pour partager autrement.", tone: "error" });
+    }
+  };
 
   const addPerson = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -155,28 +163,45 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     <>
       <BottomSheet open={open} onClose={onClose} title="Le séjour">
         <div className="space-y-7">
-          <section className="rounded-3xl bg-morocco p-5 text-ivory">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-sand">Code du crew</p>
-            <div className="mt-3 flex items-center gap-3"><strong className="flex-1 font-display text-2xl tracking-wider">{trip.shareCode}</strong><button onClick={async () => { await navigator.clipboard.writeText(trip.shareCode); toast({ message: "Code copié" }); }} className="flex size-11 items-center justify-center rounded-xl bg-white/10" aria-label="Copier le code"><Copy size={18} /></button></div>
-            {qr ? <div className="mx-auto mt-4 w-fit rounded-2xl bg-ivory p-2"><Image src={qr} alt={`QR Code pour rejoindre ${trip.name}`} width={164} height={164} unoptimized /></div> : null}
-          </section>
-
           {accountRequired ? (
-            <section className="rounded-2xl border border-sand bg-white p-4">
-              <h3 className="font-display text-xl font-bold">Mon compte</h3>
-              <p className="mt-1 text-xs text-morocco/55">Ce compte signe les actions faites depuis ce téléphone. Il reste connecté d’un lancement à l’autre.</p>
-              <div className="mt-3 flex min-h-14 items-center gap-3 rounded-xl bg-sand/25 px-3">
-                {myParticipant ? <ParticipantAvatar participant={myParticipant} /> : <span className="flex size-11 items-center justify-center rounded-xl bg-white"><UserRound size={18} /></span>}
+            <section>
+              <h3 className="font-display text-xl font-bold">Compte</h3>
+              <div className="mt-2 flex min-h-14 items-center gap-3 rounded-2xl border border-sand bg-white px-3">
+                {myParticipant ? <ParticipantAvatar participant={myParticipant} /> : <span className="flex size-11 items-center justify-center rounded-xl bg-sand/35"><UserRound size={18} /></span>}
                 <span className="min-w-0 flex-1">
                   <strong className="block truncate text-sm">{account?.displayName ?? "Compte"}</strong>
-                  <span className="block truncate text-[11px] font-bold text-morocco/50">{myParticipant ? `${account?.email ?? ""} · participant ${myParticipant.name}` : account?.email ?? ""}</span>
+                  <span className="block truncate text-[11px] font-bold text-morocco/50">{account?.email ?? ""}{myParticipant ? ` · ${myParticipant.name}` : ""}</span>
                 </span>
               </div>
-              <button onClick={() => void leave()} className="tap-bump mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-sand text-sm font-black">
-                <LogOut size={16} />Se déconnecter
-              </button>
             </section>
           ) : null}
+
+          <section>
+            <h3 className="font-display text-xl font-bold">Séjour</h3>
+            <div className="mt-2 rounded-2xl border border-sand bg-white px-4 py-3">
+              <strong className="block truncate text-sm">{trip.name}</strong>
+              <span className="block text-[11px] font-bold text-morocco/50">{formatTripRange(trip.startDate, trip.endDate)}</span>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="font-display text-xl font-bold">Inviter des amis</h3>
+            <div className="mt-2 flex min-h-14 items-center gap-3 rounded-2xl border border-sand bg-white px-4">
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-black uppercase tracking-wider text-morocco/50">Code du séjour</span>
+                <strong className="block truncate font-display text-lg tracking-wider">{trip.shareCode}</strong>
+              </span>
+              <button onClick={() => void copyCode()} className="tap-bump flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-sand px-3 text-xs font-black" aria-label="Copier le code du séjour">
+                {codeCopied ? <Check size={15} /> : <Copy size={15} />}Copier
+              </button>
+            </div>
+            <button onClick={() => setInviteOpen(true)} className="tap-bump mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-morocco text-sm font-black text-ivory">
+              <QrCode size={17} />Afficher le QR Code
+            </button>
+            <button onClick={() => setInviteOpen(true)} className="tap-bump mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-sand bg-white text-sm font-black">
+              <Share2 size={17} />Partager l’invitation
+            </button>
+          </section>
 
           <section>
             <h3 className="font-display text-xl font-bold">Participants</h3>
@@ -203,7 +228,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             <div className="mt-3 space-y-2">{activeDrinks.map((drink) => {
               const grams = calculateDrinkAlcoholGrams(drink);
               return <div key={drink.id} className="flex min-h-12 items-center gap-2 rounded-xl bg-white px-3">
-                <span className="text-xl">{drink.icon}</span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sand/35 text-morocco/75"><DrinkIcon drink={drink} size={18} /></span>
                 <span className="min-w-0 flex-1">
                   <strong className="block truncate text-sm">{drink.name}</strong>
                   <span className={`block truncate text-[11px] font-bold ${drink.compositionConfirmed ? "text-morocco/50" : "text-terra"}`}>
@@ -218,15 +243,21 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
           <TrashSection open={open} />
 
-          <section className="rounded-2xl border border-sand bg-white p-4">
-            <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={partyMode} onChange={(event) => setParty(event.target.checked)} className="size-5 accent-[#B5543C]" /><span><strong className="block text-sm">Mode soirée</strong><span className="text-xs text-morocco/55">Navigation réduite à l’ajout et au journal.</span></span></label>
+          <section>
+            <h3 className="font-display text-xl font-bold">Application</h3>
+            <label className="mt-2 flex min-h-14 items-center gap-3 rounded-2xl border border-sand bg-white px-4"><input type="checkbox" checked={partyMode} onChange={(event) => setParty(event.target.checked)} className="size-5 accent-[#B5543C]" /><span><strong className="block text-sm">Mode soirée</strong><span className="text-xs text-morocco/55">Navigation réduite à l’ajout, au journal et à l’alcoolémie.</span></span></label>
+            {accountRequired ? (
+              <button onClick={() => void leave()} className="tap-bump mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-sand bg-white text-sm font-black">
+                <LogOut size={16} />Se déconnecter
+              </button>
+            ) : null}
+            <button onClick={() => void resetDevice()} className="tap-bump mt-2 min-h-12 w-full rounded-xl border border-terra text-sm font-black text-terra">Réinitialiser les données locales</button>
           </section>
-
-          <button onClick={() => void resetDevice()} className="tap-bump min-h-12 w-full rounded-xl border border-terra text-sm font-black text-terra">Réinitialiser les données locales</button>
         </div>
       </BottomSheet>
       <DrinkFormSheet open={Boolean(editingDrink)} onClose={() => setEditingDrink(null)} drink={editingDrink} />
       <BacProfileSheet participant={bacParticipant} onClose={() => setBacParticipant(null)} />
+      <InviteSheet trip={trip} open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </>
   );
 }

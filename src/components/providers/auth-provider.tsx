@@ -34,17 +34,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(accountRequired ? "loading" : "authenticated");
   const [account, setAccount] = useState<AuthAccount | null>(null);
   const appliedUserId = useRef<string | null>(null);
+  const applying = useRef<Promise<void> | null>(null);
 
-  /** Aligne le stockage local et le moteur de sync sur le compte courant. */
-  const applySession = useCallback(async (next: AuthAccount | null) => {
-    if (appliedUserId.current === (next?.id ?? null)) return;
-    appliedUserId.current = next?.id ?? null;
-    if (next) {
+  /**
+   * Aligne le stockage local et le moteur de sync sur le compte courant.
+   *
+   * `onAuthChange` émet INITIAL_SESSION pendant que `currentSession()` est encore en
+   * vol : les deux chemins demandent le même compte. On partage donc la même promesse
+   * plutôt que de laisser le second passer devant — sans quoi l’application pourrait
+   * s’ouvrir avant que `authUserId` soit écrit, et un séjour créé dans cet intervalle
+   * porterait un auteur que la RLS refuserait ensuite.
+   */
+  const applySession = useCallback((next: AuthAccount | null): Promise<void> => {
+    const userId = next?.id ?? null;
+    if (appliedUserId.current === userId && applying.current) return applying.current;
+    appliedUserId.current = userId;
+    applying.current = (async () => {
       // Un autre compte sur ce navigateur ne doit jamais voir le séjour du précédent.
-      await claimLocalData(next.id);
-      await setAuthUserId(next.id);
-    }
-    syncEngine.setUser(next?.id ?? null);
+      if (userId) {
+        await claimLocalData(userId);
+        await setAuthUserId(userId);
+      }
+      syncEngine.setUser(userId);
+    })();
+    return applying.current;
   }, []);
 
   useEffect(() => {
@@ -86,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setAuthUserId(null);
     await supabaseSignOut();
     appliedUserId.current = null;
+    applying.current = null;
     setAccount(null);
     setStatus("unauthenticated");
   }, []);

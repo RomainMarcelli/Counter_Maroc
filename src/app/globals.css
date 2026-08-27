@@ -8,6 +8,8 @@
   --sand: #e9d6b5;
   --ivory: #fff8ec;
   --header-height: 74px;
+  /* Un peu plus haute que la précédente : cinq onglets, libellés lisibles. */
+  --bottom-nav-height: 78px;
   color-scheme: light;
 }
 
@@ -51,7 +53,7 @@ button {
   width: min(100%, 720px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: calc(var(--header-height) + 20px) 16px calc(102px + env(safe-area-inset-bottom));
+  padding: calc(var(--header-height) + 20px) 16px calc(var(--bottom-nav-height) + 28px + env(safe-area-inset-bottom));
 }
 
 .font-display {
@@ -107,12 +109,46 @@ button {
   animation: toast-progress 6s linear both;
 }
 
+/* Les verres portent la couleur de ce qu’ils contiennent. Sur fond vert cette
+   teinte devient illisible : le conteneur pose la variable une fois et toute sa
+   sous-arborescence revient au sable. */
+.tint-neutral {
+  --drink-tint: #E9D6B5;
+}
+
+/* Confirmation très courte d’une sélection (grille des participants). */
+.select-pop {
+  animation: select-pop 180ms ease-out both;
+}
+
 .count-bump {
   animation: count-bump 220ms ease-out both;
 }
 
 .card-enter {
   animation: card-enter 300ms ease-out both;
+}
+
+.hall-hero::before {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 18%, rgb(233 214 181 / 16%), transparent 34%),
+    linear-gradient(135deg, transparent 46%, rgb(233 214 181 / 6%) 47% 53%, transparent 54%) 0 0 / 34px 34px;
+  content: "";
+  pointer-events: none;
+}
+
+.podium-enter {
+  animation: podium-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.podium-first {
+  animation-name: podium-crown;
+}
+
+.trophy-enter {
+  animation: trophy-reveal 380ms ease-out both;
 }
 
 .brand-loader-logo {
@@ -135,12 +171,29 @@ button {
   from { opacity: 0; transform: translateY(8px); }
 }
 
+@keyframes podium-rise {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+}
+
+@keyframes podium-crown {
+  from { opacity: 0; transform: translateY(38px) scale(0.94); }
+}
+
+@keyframes trophy-reveal {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+}
+
 @keyframes dialog-pop {
   from { opacity: 0; transform: translateY(12px) scale(0.97); }
 }
 
 @keyframes toast-progress {
   to { transform: scaleX(0); }
+}
+
+@keyframes select-pop {
+  from { transform: scale(0.97); }
+  to { transform: scale(1); }
 }
 
 @keyframes count-bump {

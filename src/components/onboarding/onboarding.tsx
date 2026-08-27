@@ -28,14 +28,8 @@ export function Onboarding() {
   const firstName = account?.displayName ?? "";
 
   useEffect(() => {
-    const joinCode = new URLSearchParams(window.location.search).get("join");
-    if (joinCode) {
-      setCode(joinCode.toUpperCase());
-      setMode("join");
-      setRestoring(false);
-      return;
-    }
     // Séjour déjà rejoint depuis un autre téléphone : on le rouvre sans rien demander.
+    // Les invitations par lien sont traitées en amont par JoinInvite.
     let cancelled = false;
     void syncEngine.listMyTrips()
       .then(async (trips) => {
@@ -87,7 +81,7 @@ export function Onboarding() {
       <div>
         <BrandLogo size={80} className="mb-10 rounded-[26px] shadow-card" priority />
         <p className="text-xs font-black uppercase tracking-[0.25em] text-terra">Le séjour commence ici</p>
-        <h1 className="mt-3 font-display text-5xl font-bold leading-[0.95]">{firstName ? <>Bienvenue<br />{firstName} 👋</> : <>Marrakech<br />Crew</>}</h1>
+        <h1 className="mt-3 font-display text-5xl font-bold leading-[0.95]">{firstName ? <>Bienvenue<br />{firstName}</> : <>Marrakech<br />Crew</>}</h1>
         <p className="mt-5 max-w-xs text-base leading-relaxed text-morocco/65">Crée le séjour du groupe, ou rejoins celui d’un ami avec son code. Ensuite, tout fonctionne même en mode avion.</p>
       </div>
       {restoring ? (

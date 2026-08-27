@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { Plus, Trash2 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { CATEGORY_DEFAULTS, CATEGORY_LABELS, DRINK_ICONS } from "@/domain/constants";
+import { CATEGORY_DEFAULTS, CATEGORY_LABELS } from "@/domain/constants";
+import { DRINK_ICON_KEYS, DRINK_ICON_LABELS, defaultIconKeyForCategory, resolveDrinkIconKey, tintForIconKey } from "@/domain/drink-icons";
+import { DrinkIconGlyph } from "@/components/drinks/drink-icon";
 import type { AlcoholComponent, Drink, DrinkCategory } from "@/domain/types";
 import { addDrink, updateDrink } from "@/data/repository";
 import { useTrip } from "@/components/providers/trip-provider";
@@ -42,7 +44,7 @@ export function DrinkFormSheet({ open, onClose, drink = null, defaultCategory = 
   const toast = useToast();
   const [name, setName] = useState("");
   const [category, setCategory] = useState<DrinkCategory>(defaultCategory);
-  const [icon, setIcon] = useState("🍹");
+  const [icon, setIcon] = useState<string>("cocktail");
   const [volumeCl, setVolumeCl] = useState("");
   const [abv, setAbv] = useState("");
   const [recipe, setRecipe] = useState(false);
@@ -54,7 +56,8 @@ export function DrinkFormSheet({ open, onClose, drink = null, defaultCategory = 
     const nextCategory = drink?.category ?? defaultCategory;
     setName(drink?.name ?? "");
     setCategory(nextCategory);
-    setIcon(drink?.icon ?? "🍹");
+    // Une ancienne boisson porte encore un emoji : on la relit en pictogramme.
+    setIcon(drink ? resolveDrinkIconKey(drink) : defaultIconKeyForCategory(nextCategory));
     setVolumeCl(mlToCl(drink?.servingVolumeMl ?? CATEGORY_DEFAULTS[nextCategory].servingVolumeMl));
     setAbv(drink?.abvPercent ? String(drink.abvPercent) : drink ? "" : String(CATEGORY_DEFAULTS[nextCategory].abvPercent));
     setRecipe(Boolean(drink?.alcoholComponents?.length));
@@ -95,8 +98,26 @@ export function DrinkFormSheet({ open, onClose, drink = null, defaultCategory = 
     <BottomSheet open={open} onClose={onClose} title={drink ? "Modifier la boisson" : "Nouvelle boisson"}>
       <form className="space-y-5" onSubmit={submit}>
         <label className="block text-sm font-extrabold">Nom<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Gin Tonic" className="mt-2 min-h-14 w-full rounded-2xl border border-sand bg-white px-4 outline-none" required /></label>
-        <fieldset><legend className="mb-2 text-sm font-extrabold">Catégorie</legend><div className="grid grid-cols-2 gap-2">{(Object.entries(CATEGORY_LABELS) as [DrinkCategory, string][]).map(([value, label]) => <button type="button" key={value} onClick={() => setCategory(value)} aria-pressed={category === value} className={clsx("min-h-12 rounded-xl border-2 text-sm font-bold", category === value ? "border-morocco bg-morocco text-ivory" : "border-sand bg-white")}>{label}</button>)}</div></fieldset>
-        <fieldset><legend className="mb-2 text-sm font-extrabold">Icône</legend><div className="grid grid-cols-5 gap-2">{DRINK_ICONS.map((value) => <button type="button" key={value} onClick={() => setIcon(value)} aria-label={`Choisir ${value}`} aria-pressed={icon === value} className={clsx("min-h-12 rounded-xl border-2 text-xl", icon === value ? "border-terra bg-terra/10" : "border-sand bg-white")}>{value}</button>)}</div></fieldset>
+        <fieldset>
+          <legend className="mb-2 text-sm font-extrabold">Catégorie</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.entries(CATEGORY_LABELS) as [DrinkCategory, string][]).map(([value, label]) => (
+              <button type="button" key={value} onClick={() => { setCategory(value); setIcon(defaultIconKeyForCategory(value)); }} aria-pressed={category === value} className={clsx("tap-bump min-h-14 rounded-xl border-2 text-sm font-bold", category === value ? "border-morocco bg-morocco text-ivory" : "border-sand bg-white")}>{label}</button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend className="mb-2 text-sm font-extrabold">Pictogramme</legend>
+          <div className="grid grid-cols-4 gap-2">
+            {DRINK_ICON_KEYS.map((value) => (
+              <button type="button" key={value} onClick={() => setIcon(value)} aria-label={`Pictogramme ${DRINK_ICON_LABELS[value]}`} aria-pressed={icon === value} className={clsx("tap-bump flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border-2 transition", icon === value ? "border-terra bg-terra/10 text-terra" : "border-sand bg-white text-morocco/70")}>
+                <DrinkIconGlyph iconKey={value} tint={tintForIconKey(value)} size={22} />
+                <span className="text-[10px] font-black">{DRINK_ICON_LABELS[value]}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
         <fieldset className="rounded-2xl border border-sand bg-white/60 p-4">
           <legend className="px-1 text-sm font-extrabold">Estimation alcool</legend>

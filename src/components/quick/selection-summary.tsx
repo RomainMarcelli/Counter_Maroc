@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, Droplets, Users } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
+import { useBac } from "@/components/providers/bac-provider";
 import { BacDetailSheet } from "@/components/bac/bac-detail-sheet";
-import { useNow } from "@/lib/use-now";
 import { zonedDayKey } from "@/lib/timezone";
-import { ABSORPTION_MINUTES, buildAlcoholEvents, buildBacProfile, canSeeBac, estimateBacAt, formatBac } from "@/domain/bac";
+import { formatBac } from "@/domain/bac";
 import type { Participant } from "@/domain/types";
 
 /** Nombre de verres d’affilée sans eau avant de suggérer un verre d’eau. */
@@ -18,30 +18,33 @@ const WATER_HINT_THRESHOLD = 3;
  * un taux est individuel.
  */
 export function SelectionSummary() {
-  const { trip, activeParticipants, drinks, drinkEntries, waterEntries, selectedParticipantIds, actorId } = useTrip();
-  const now = useNow();
+  const { trip, activeParticipants, drinkEntries, waterEntries, selectedParticipantIds } = useTrip();
+  // Même estimation, même instant que la page Alcoolémie et que la modale de détail :
+  // c’est le provider qui calcule, cet écran ne fait que lire.
+  const { now, rowFor } = useBac();
   const [detail, setDetail] = useState<Participant | null>(null);
   const single = selectedParticipantIds.length === 1 ? activeParticipants.find((participant) => participant.id === selectedParticipantIds[0]) ?? null : null;
 
   const summary = useMemo(() => {
     if (!trip || !single) return null;
-    const today = zonedDayKey(new Date(now).toISOString(), trip.timezone);
+    const today = zonedDayKey(new Date(now).toISOString());
     const mine = drinkEntries.filter((entry) => !entry.deletedAt && entry.participantId === single.id);
-    const drinksToday = mine.filter((entry) => zonedDayKey(entry.consumedAt, trip.timezone) === today);
-    const watersToday = waterEntries.filter((entry) => !entry.deletedAt && entry.participantId === single.id && zonedDayKey(entry.consumedAt, trip.timezone) === today);
+    const drinksToday = mine.filter((entry) => zonedDayKey(entry.consumedAt) === today);
+    const watersToday = waterEntries.filter((entry) => !entry.deletedAt && entry.participantId === single.id && zonedDayKey(entry.consumedAt) === today);
     const lastWater = watersToday.map((entry) => entry.consumedAt).sort().at(-1) ?? "";
     const sinceWater = drinksToday.filter((entry) => entry.consumedAt > lastWater).length;
-    const profile = buildBacProfile(single);
-    const visible = canSeeBac(single, actorId);
-    const bac = profile && visible ? estimateBacAt({ profile, events: buildAlcoholEvents(drinkEntries, drinks, single.id), at: now }).estimatedGPerL : null;
-    // Un verre à peine servi n’est pas encore passé dans le sang : on le dit plutôt que d’afficher un 0 muet.
-    // La tolérance négative couvre le pas d’horloge : `now` peut avoir jusqu’à une minute de retard sur l’ajout.
-    const absorbing = mine.filter((entry) => {
-      const elapsed = now - Date.parse(entry.consumedAt);
-      return elapsed > -60_000 && elapsed < ABSORPTION_MINUTES * 60_000;
-    }).length;
-    return { drinksToday: drinksToday.length, watersToday: watersToday.length, sinceWater, bac, absorbing, hasProfile: Boolean(profile) };
-  }, [trip, single, drinkEntries, waterEntries, drinks, actorId, now]);
+    // Un verre à peine servi n’est pas encore passé dans le sang : on le dit plutôt
+    // que d’afficher un 0 muet.
+    const row = rowFor(single.id);
+    return {
+      drinksToday: drinksToday.length,
+      watersToday: watersToday.length,
+      sinceWater,
+      bac: row?.stats?.current.estimatedGPerL ?? null,
+      absorbing: row?.absorbing ?? 0,
+      hasProfile: Boolean(row?.profile),
+    };
+  }, [trip, single, drinkEntries, waterEntries, rowFor, now]);
 
   if (!trip) return null;
   if (!single || !summary) {

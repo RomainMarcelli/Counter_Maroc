@@ -4,7 +4,7 @@ import { isRemoteNewer, retryDelayMs } from "./queue";
 import { fromRemote, TABLE_BY_ENTITY, toRemote } from "./sync-mappers";
 import { getSupabase } from "./supabase";
 import { authErrorMessage, currentUserId, isAuthorizationError } from "./auth";
-import type { EntityBase, EntityType, Participant, SyncOperation } from "@/domain/types";
+import type { EntityBase, EntityType, Participant, SyncOperation, Trip } from "@/domain/types";
 
 const PRIORITY: Record<EntityType, number> = { trip: 0, participant: 1, drink: 2, drinkEntry: 3, waterEntry: 3 };
 const SYNCED_ENTITIES: EntityType[] = ["trip", "participant", "drink", "drinkEntry", "waterEntry"];
@@ -63,6 +63,7 @@ class SyncEngine {
   private channels: RealtimeChannel[] = [];
   private subscribedTripId: string | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private resumeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Séjours dont le membership serveur est confirmé, par utilisateur. */
   private membership = new Map<string, string>();
 
@@ -70,17 +71,25 @@ class SyncEngine {
     if (this.started || typeof window === "undefined") return;
     this.started = true;
     window.addEventListener("online", this.onOnline);
+    window.addEventListener("focus", this.onResume);
+    window.addEventListener("pageshow", this.onResume);
     window.addEventListener("marrakech-local-change", this.onLocalChange);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
   }
 
   stop(): void {
     if (typeof window !== "undefined") {
       window.removeEventListener("online", this.onOnline);
+      window.removeEventListener("focus", this.onResume);
+      window.removeEventListener("pageshow", this.onResume);
       window.removeEventListener("marrakech-local-change", this.onLocalChange);
+      document.removeEventListener("visibilitychange", this.onVisibilityChange);
     }
     this.unsubscribe();
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
     this.retryTimer = null;
+    this.resumeTimer = null;
     this.started = false;
   }
 
@@ -113,8 +122,35 @@ class SyncEngine {
   };
 
   private onOnline = (): void => {
-    // Revenir en ligne est un vrai changement d’état : on retente sans attendre le backoff.
-    void this.flush({ immediate: true });
+    this.resumeSync();
+  };
+
+  private onVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") this.onResume();
+  };
+
+  private onResume = (): void => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    this.resumeSync();
+  };
+
+  /**
+   * Safari iOS peut suspendre les sockets Realtime quand la PWA passe en arrière-plan.
+   * À la reprise on recrée les canaux, on relit le séjour et on vide la file. Les
+   * événements de reprise arrivant souvent ensemble, un court délai évite les doublons.
+   */
+  private resumeSync(): void {
+    if (!this.enabled || !this.userId || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
+    this.resumeTimer = setTimeout(() => {
+      this.resumeTimer = null;
+      const tripId = this.subscribedTripId;
+      if (tripId) {
+        this.subscribe(tripId, true);
+        void this.pullTrip(tripId).catch(() => undefined);
+      }
+      void this.flush({ immediate: true });
+    }, 150);
   };
 
   flush = async (options: { immediate?: boolean } = {}): Promise<void> => {
@@ -211,6 +247,21 @@ class SyncEngine {
     });
     if (rpcError) throw rpcError;
     this.membership.set(tripId, userId);
+    await this.adoptServerShareCode(client, trip);
+  }
+
+  /**
+   * Le RPC retire un code de partage déjà utilisé par un autre séjour. Dans ce cas
+   * le téléphone doit adopter celui qui a réellement été enregistré, sinon il
+   * repousserait indéfiniment le code en collision.
+   */
+  private async adoptServerShareCode(client: SupabaseClient, trip: Trip): Promise<void> {
+    const { data } = await client.from("trips").select("share_code").eq("id", trip.id).maybeSingle();
+    const shareCode = data?.share_code as string | undefined;
+    if (!shareCode || shareCode === trip.shareCode) return;
+    await db.trips.update(trip.id, { shareCode });
+    const queued = await db.syncQueue.get(`trip:${trip.id}`);
+    if (queued) await db.syncQueue.put({ ...queued, payload: { ...(queued.payload as Trip), shareCode } as EntityBase });
   }
 
   private async ownerParticipant(tripId: string, userId: string): Promise<Pick<Participant, "id" | "name">> {
@@ -233,18 +284,21 @@ class SyncEngine {
   }
 
   private async pushOperation(client: SupabaseClient, operation: SyncOperation): Promise<{ kind: SyncErrorKind; message: string } | null> {
+    // La file a pu être corrigée depuis sa lecture — par exemple le code de partage
+    // arbitré par le serveur. On pousse toujours la version la plus fraîche.
+    const current = (await db.syncQueue.get(operation.id)) ?? operation;
     await db.syncQueue.update(operation.id, { status: "syncing", lastError: null });
     announce();
     try {
-      const payload = toRemote(operation.entityType, operation.payload as never);
-      const { error } = await client.from(TABLE_BY_ENTITY[operation.entityType]).upsert(payload, { onConflict: "id" });
+      const payload = toRemote(current.entityType, current.payload as never);
+      const { error } = await client.from(TABLE_BY_ENTITY[current.entityType]).upsert(payload, { onConflict: "id" });
       if (error) throw error;
       await db.syncQueue.delete(operation.id);
       return null;
     } catch (error) {
       const authorization = isAuthorizationError(error);
       const message = authErrorMessage(error);
-      const attempts = operation.attempts + 1;
+      const attempts = current.attempts + 1;
       await db.syncQueue.update(operation.id, {
         status: "failed",
         attempts,
@@ -273,10 +327,10 @@ class SyncEngine {
     this.subscribedTripId = null;
   }
 
-  subscribe(tripId: string): void {
+  subscribe(tripId: string, force = false): void {
     const client = getSupabase();
     if (!client || !this.userId) return;
-    if (this.subscribedTripId === tripId && this.channels.length) return;
+    if (!force && this.subscribedTripId === tripId && this.channels.length) return;
     this.unsubscribe();
     this.subscribedTripId = tripId;
     for (const entityType of SYNCED_ENTITIES) {
@@ -297,11 +351,25 @@ class SyncEngine {
     if (!client || (typeof navigator !== "undefined" && !navigator.onLine)) return;
     this.userId ??= await currentUserId();
     if (!this.userId) return;
-    for (const entityType of SYNCED_ENTITIES) {
-      const query = client.from(TABLE_BY_ENTITY[entityType]).select("*");
-      const { data: rows, error } = entityType === "trip" ? await query.eq("id", tripId) : await query.eq("trip_id", tripId);
-      if (error) throw error;
-      for (const row of rows ?? []) await mergeRemote(entityType, row);
+    try {
+      for (const entityType of SYNCED_ENTITIES) {
+        const query = client.from(TABLE_BY_ENTITY[entityType]).select("*");
+        const { data: rows, error } = entityType === "trip" ? await query.eq("id", tripId) : await query.eq("trip_id", tripId);
+        if (error) throw error;
+        for (const row of rows ?? []) await mergeRemote(entityType, row);
+      }
+
+      // Une lecture distante réussie acquitte une ancienne panne réseau seulement si
+      // aucune écriture locale n'est encore en échec.
+      const [storedKind, failed] = await Promise.all([
+        db.settings.get("syncErrorKind"),
+        db.syncQueue.where("status").equals("failed").count(),
+      ]);
+      if (storedKind?.value === "network" && failed === 0) await clearError();
+    } catch (error) {
+      await recordError(isAuthorizationError(error) ? "membership" : "network", authErrorMessage(error));
+      announce();
+      throw error;
     }
     announce();
   }

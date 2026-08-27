@@ -5,4 +5,5 @@ export * from "./absorption";
 export * from "./widmark";
 export * from "./timeline";
 export * from "./profile";
+export * from "./consumption-detail";
 export * from "./format";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { getZonedParts } from "@/lib/timezone";
+import { deviceTimeZone, getZonedParts } from "@/lib/timezone";
 import { formatBac } from "@/domain/bac";
 import type { BacPoint } from "@/domain/bac";
 
@@ -18,7 +18,7 @@ const PADDING = { top: 12, right: 8, bottom: 20, left: 30 };
  * Courbe d’alcoolémie estimée en SVG : le modèle est linéaire par morceaux, une polyline
  * sur ses points de rupture suffit donc à le tracer exactement, sans librairie de graphes.
  */
-export function BacCurve({ points, markers = [], now, timezone, label }: { points: BacPoint[]; markers?: CurveMarker[]; now?: number; timezone: string; label: string }) {
+export function BacCurve({ points, markers = [], now, timezone = deviceTimeZone(), label }: { points: BacPoint[]; markers?: CurveMarker[]; now?: number; timezone?: string; label: string }) {
   const chart = useMemo(() => {
     if (points.length < 2) return null;
     const times = points.map((point) => Date.parse(point.at));

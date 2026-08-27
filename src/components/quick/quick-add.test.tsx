@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { useTrip } from "@/components/providers/trip-provider";
 import { ToastProvider } from "@/components/providers/toast-provider";
+import { BacProvider } from "@/components/providers/bac-provider";
 import { DRINK_DEFAULTS, ENTRY_DEFAULTS, PARTICIPANT_DEFAULTS } from "@/test/factories";
 import type { Drink, DrinkEntry, Participant, SyncOperation, Trip, UndoBatch } from "@/domain/types";
 
@@ -67,7 +68,8 @@ function setTrip(overrides: Partial<TripValue> = {}): void {
   };
 }
 
-const renderQuickAdd = () => render(<ToastProvider><QuickAdd /></ToastProvider>);
+const QuickAddTree = () => <BacProvider><ToastProvider><QuickAdd /></ToastProvider></BacProvider>;
+const renderQuickAdd = () => render(<QuickAddTree />);
 const drinkCards = () => screen.queryAllByRole("button", { name: /^Ajouter un .+ aux participants sélectionnés$/ });
 const cardNames = () => drinkCards().map((button) => button.getAttribute("aria-label")?.replace("Ajouter un ", "").replace(" aux participants sélectionnés", ""));
 const favoriteNames = () => drinkCards().filter((button) => button.dataset.favorite === "true").map((button) => button.getAttribute("aria-label"));
@@ -236,11 +238,11 @@ describe("ajout et annulation", () => {
     expect(await screen.findByRole("button", { name: "Annuler" })).toBeInTheDocument();
 
     setTrip({ queue: [queueOp("e1")] });
-    view.rerender(<ToastProvider><QuickAdd /></ToastProvider>);
+    view.rerender(<QuickAddTree />);
     expect(screen.getByText(/synchronisation en attente/)).toBeInTheDocument();
 
     setTrip({ queue: [] });
-    view.rerender(<ToastProvider><QuickAdd /></ToastProvider>);
+    view.rerender(<QuickAddTree />);
 
     expect(await screen.findByText("Synchronisé avec le groupe ✓")).toBeInTheDocument();
     expect(screen.getByText("Mojito ajouté à Romain")).toBeInTheDocument();

@@ -3,11 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const rpc = vi.fn();
 const upsert = vi.fn();
+/** Ligne de `trip_members` renvoyée à la vérification du membership. */
 const maybeSingle = vi.fn();
-const from = vi.fn((table: string) => ({
-  select: () => ({ eq: () => ({ eq: () => ({ maybeSingle }) }) }),
-  upsert: (payload: unknown, options: unknown) => upsert(table, payload, options),
-}));
+/** Ligne de `trips` relue après le RPC, pour le code de partage réellement retenu. */
+const tripRow = vi.fn();
+const from = vi.fn((table: string) => {
+  const single = table === "trips" ? tripRow : maybeSingle;
+  const chain: { eq: () => typeof chain; maybeSingle: () => unknown } = {
+    eq: () => chain,
+    maybeSingle: () => single(),
+  };
+  return {
+    select: () => chain,
+    upsert: (payload: unknown, options: unknown) => upsert(table, payload, options),
+  };
+});
 const client = { rpc, from };
 let configured = true;
 
@@ -44,6 +54,7 @@ beforeEach(async () => {
   vi.stubGlobal("navigator", { onLine: true });
   currentUserId.mockResolvedValue(USER);
   maybeSingle.mockResolvedValue({ data: { trip_id: "x" }, error: null });
+  tripRow.mockResolvedValue({ data: null, error: null });
   upsert.mockResolvedValue({ error: null });
   rpc.mockResolvedValue({ data: null, error: null });
   syncEngine.setUser(null);
@@ -96,6 +107,30 @@ describe("membership confirmé avant toute écriture", () => {
     // C’est exactement le scénario qui produisait des 403 en rafale sur /drinks.
     expect(upsert).not.toHaveBeenCalled();
     expect((await db.settings.get("syncErrorKind"))?.value).toBe("membership");
+  });
+
+  it("envoie created_by avec le séjour, sinon la policy d’insertion refuse l’upsert", async () => {
+    await tripWithQueuedRound();
+
+    await syncEngine.flush();
+
+    const tripPayload = upsert.mock.calls.find((call) => call[0] === "trips")?.[1] as Record<string, unknown>;
+    // PostgreSQL évalue le WITH CHECK de l’INSERT sur la ligne proposée avant de
+    // détecter le conflit : sans created_by, l’upsert repart en 42501.
+    expect(tripPayload.created_by).toBe(USER);
+  });
+
+  it("adopte le code de partage retenu par le serveur en cas de collision", async () => {
+    const tripId = await tripWithQueuedRound();
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+    tripRow.mockResolvedValue({ data: { share_code: "MAROC-26-ZZZZ" }, error: null });
+
+    await syncEngine.flush();
+
+    expect((await db.trips.get(tripId))?.shareCode).toBe("MAROC-26-ZZZZ");
+    const tripPayload = upsert.mock.calls.find((call) => call[0] === "trips")?.[1] as Record<string, unknown>;
+    // Le téléphone ne doit pas repousser le code en collision.
+    expect(tripPayload.share_code).toBe("MAROC-26-ZZZZ");
   });
 
   it("ne revérifie pas le membership à chaque passage", async () => {

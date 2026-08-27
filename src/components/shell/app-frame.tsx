@@ -10,18 +10,23 @@ import { BottomNav } from "./bottom-nav";
 import { SyncIndicator } from "./sync-indicator";
 import { SettingsSheet } from "@/components/settings/settings-sheet";
 import { IdentityGate } from "@/components/onboarding/identity-gate";
+import { JoinInvite } from "@/components/onboarding/join-invite";
+import { usePendingInvite } from "@/components/onboarding/invite-capture";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { BrandLoader } from "@/components/brand/brand-loader";
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
   const { ready, trip, actorId, activeParticipants } = useTrip();
   const { status } = useAuth();
+  const pendingInvite = usePendingInvite();
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Aucun écran de l’application n’apparaît avant de connaître l’état de session :
   // pas de flash de contenu suivi d’une redirection vers la connexion.
   if (status === "loading") return <BrandLoader />;
   if (status === "unauthenticated") return <AuthScreen />;
   if (!ready) return <BrandLoader />;
+  // Une invitation reçue par lien passe avant tout le reste, séjour déjà ouvert compris.
+  if (pendingInvite) return <JoinInvite code={pendingInvite} />;
   if (!trip) return <Onboarding />;
   if (!actorId || !activeParticipants.some((participant) => participant.id === actorId)) return <IdentityGate />;
   return (

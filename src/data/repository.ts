@@ -2,6 +2,7 @@ import { db } from "./database";
 import { queueOperation } from "./queue";
 import { demoSnapshot } from "./seed";
 import { CATEGORY_DEFAULTS, SYSTEM_DRINKS, TRIP_TIMEZONE } from "@/domain/constants";
+import { deviceTimeZone } from "@/lib/timezone";
 import type { AlcoholComponent, Drink, DrinkCategory, DrinkEntry, EntityBase, EntityType, Participant, Trip, UndoBatch, WaterEntry } from "@/domain/types";
 import { calculateDrinkAlcoholGrams } from "@/domain/bac";
 import { createId, createShareCode } from "@/lib/id";
@@ -134,7 +135,9 @@ export async function createTrip(input: { name: string; startDate: string; endDa
     shareCode: createShareCode(input.name),
     startDate: input.startDate,
     endDate: input.endDate,
-    timezone: TRIP_TIMEZONE,
+    // Repère du séjour, pas une contrainte d’affichage : chacun voit ses heures
+    // dans le fuseau de son téléphone.
+    timezone: deviceTimeZone() || TRIP_TIMEZONE,
     createdBy: authorId,
     createdAt: timestamp,
     updatedAt: timestamp,

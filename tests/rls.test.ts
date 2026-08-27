@@ -128,6 +128,61 @@ suite("un membre du séjour", () => {
     expect(error).toBeNull();
   });
 
+  it("peut resynchroniser le séjour sans en être le créateur", async () => {
+    // Un upsert PostgREST reste un INSERT ... ON CONFLICT : PostgreSQL évalue le
+    // WITH CHECK de la policy d’insertion sur la ligne proposée, `created_by`
+    // compris. Sans la migration 0005, Lucas se prenait un 42501 sur /trips.
+    const { error } = await lucas.client.from("trips").upsert({
+      id: tripId, name: "Marrakech RLS", share_code: shareCode,
+      start_date: "2026-09-07", end_date: "2026-09-16", timezone: "Africa/Casablanca",
+      created_by: romain.userId, updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+    expect(error).toBeNull();
+  });
+
+  it("ne peut pas créer un séjour au nom de quelqu’un d’autre", async () => {
+    const { error } = await lucas.client.from("trips").insert({
+      id: uuid(), name: "Usurpation", share_code: `USURP-${stamp}`,
+      start_date: "2026-09-07", end_date: "2026-09-16", created_by: romain.userId,
+    });
+    expect(error?.code).toBe("42501");
+  });
+
+  it("peut corriger puis supprimer une consommation saisie par quelqu’un d’autre", async () => {
+    const drinkId = uuid();
+    const entryId = uuid();
+    await romain.client.from("drinks").insert({ id: drinkId, trip_id: tripId, name: "À corriger", category: "beer", icon: "🍺" });
+    await romain.client.from("drink_entries").insert({
+      id: entryId, trip_id: tripId, participant_id: lucasParticipantId, drink_id: drinkId,
+      consumed_at: new Date().toISOString(), action_by: romain.userId, device_id: uuid(),
+    });
+
+    // Lucas renvoie la ligne telle que la file la porte : l’auteur reste Romain.
+    const row = {
+      id: entryId, trip_id: tripId, participant_id: lucasParticipantId, drink_id: drinkId,
+      consumed_at: new Date().toISOString(), action_by: romain.userId, device_id: uuid(),
+      updated_at: new Date().toISOString(),
+    };
+    const corrected = await lucas.client.from("drink_entries").upsert(row, { onConflict: "id" });
+    expect(corrected.error).toBeNull();
+
+    const removed = await lucas.client.from("drink_entries")
+      .upsert({ ...row, updated_at: new Date().toISOString(), deleted_at: new Date().toISOString() }, { onConflict: "id" });
+    expect(removed.error).toBeNull();
+  });
+
+  it("ne peut pas créer une consommation signée par quelqu’un d’autre", async () => {
+    const drinkId = uuid();
+    await romain.client.from("drinks").insert({ id: drinkId, trip_id: tripId, name: "Signature", category: "beer", icon: "🍺" });
+
+    // Ligne neuve : la contrainte de traçabilité s’applique pleinement.
+    const { error } = await lucas.client.from("drink_entries").upsert({
+      id: uuid(), trip_id: tripId, participant_id: lucasParticipantId, drink_id: drinkId,
+      consumed_at: new Date().toISOString(), action_by: romain.userId, device_id: uuid(),
+    }, { onConflict: "id" });
+    expect(error?.code).toBe("42501");
+  });
+
   it("voit les verres saisis par les autres membres", async () => {
     const { data, error } = await lucas.client.from("drink_entries").select("id").eq("trip_id", tripId);
     expect(error).toBeNull();

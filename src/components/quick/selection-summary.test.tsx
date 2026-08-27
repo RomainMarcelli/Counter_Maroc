@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { useTrip } from "@/components/providers/trip-provider";
 import { ToastProvider } from "@/components/providers/toast-provider";
+import { BacProvider } from "@/components/providers/bac-provider";
 import { DRINK_DEFAULTS, ENTRY_DEFAULTS, PARTICIPANT_DEFAULTS } from "@/test/factories";
 import { calculatePureAlcoholGrams } from "@/domain/bac";
 import type { Drink, DrinkEntry, Participant, Trip } from "@/domain/types";
@@ -16,8 +17,9 @@ vi.mock("@/data/repository", () => ({ updateParticipant: vi.fn(), refreshEntrySn
 
 import { SelectionSummary } from "./selection-summary";
 
-// 23h30 à Marrakech (UTC+1) : les verres de la soirée comptent bien pour la journée en cours.
-const NOW = Date.parse("2026-09-12T22:30:00.000Z");
+// Instant choisi avant minuit dans tous les fuseaux européens utilisés en CI :
+// le test porte sur le compteur, pas sur le fuseau de la machine qui l'exécute.
+const NOW = Date.parse("2026-09-12T21:30:00.000Z");
 const base = { tripId: "trip", createdAt: "2026-09-12T18:00:00.000Z", updatedAt: "2026-09-12T18:00:00.000Z", deletedAt: null };
 const trip: Trip = { ...base, id: "trip", name: "Marrakech 2026", shareCode: "CREW-01", startDate: "2026-09-07", endDate: "2026-09-16", timezone: "Africa/Casablanca", createdBy: "device" };
 const whisky: Drink = { ...base, ...DRINK_DEFAULTS, id: "whisky", name: "Whisky", category: "spirit", icon: "🥃", isAlcohol: true, isSystem: true, sortOrder: 0, servingVolumeMl: 40, abvPercent: 40 };
@@ -50,7 +52,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const renderSummary = () => render(<ToastProvider><SelectionSummary /></ToastProvider>);
+const renderSummary = () => render(<BacProvider><ToastProvider><SelectionSummary /></ToastProvider></BacProvider>);
 
 describe("bandeau de l’écran Rapide", () => {
   it("affiche le compteur du jour et l’estimation d’alcoolémie", () => {
@@ -97,7 +99,7 @@ describe("bandeau de l’écran Rapide", () => {
   });
 
   it("signale une série de verres sans eau", () => {
-    setTrip({ drinkEntries: [entry("romain", 19), entry("romain", 20), entry("romain", 21), entry("romain", 22)] });
+    setTrip({ drinkEntries: [entry("romain", 18), entry("romain", 19), entry("romain", 20), entry("romain", 21)] });
     renderSummary();
     expect(screen.getByText(/4 verres sans eau/)).toBeInTheDocument();
   });

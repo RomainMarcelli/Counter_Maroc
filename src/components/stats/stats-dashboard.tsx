@@ -9,13 +9,15 @@ import { TemporalAnalysis } from "./temporal-analysis";
 import { BacSection } from "./bac-section";
 import { ExpensesSection } from "./expenses-section";
 import { ParticipantAvatar } from "@/components/participants/participant-avatar";
+import { DrinkIcon, DrinkIconGlyph } from "@/components/drinks/drink-icon";
 
 export function StatsDashboard() {
   const { trip, participants, drinks, drinkEntries, waterEntries } = useTrip();
   const stats = useMemo(() => trip ? calculateStats(trip, participants, drinks, drinkEntries, waterEntries) : null, [trip, participants, drinks, drinkEntries, waterEntries]);
   if (!trip || !stats) return null;
-  if (!stats.totalAlcohol && !stats.totalWater) return <><PageHeader /><EmptyState icon="📊" title="Les stats arrivent" detail="Il faut quelques consommations avant de révéler les tendances du crew." /></>;
+  if (!stats.totalAlcohol && !stats.totalWater) return <><PageHeader /><EmptyState icon={<BarChart3 size={30} />} title="Les stats arrivent" detail="Il faut quelques consommations avant de révéler les tendances du crew." /></>;
   const participantById = new Map(participants.map((participant) => [participant.id, participant]));
+  const drinkById = new Map(drinks.map((drink) => [drink.id, drink]));
   const weeks = stats.days.reduce<Array<{ total: number; water: number }>>((result, day) => {
     const index = Math.max(0, Math.floor((Date.parse(day.date) - Date.parse(trip.startDate)) / (7 * 86_400_000)));
     result[index] ??= { total: 0, water: 0 };
@@ -47,12 +49,12 @@ export function StatsDashboard() {
 
       <section>
         <SectionTitle icon={<GlassWater />} title="Qui a bu quoi" subtitle="Détail et part personnelle" />
-        <div className="mt-3 space-y-3">{stats.participants.filter((item) => item.total > 0).map((participant) => <details key={participant.id} className="rounded-2xl border border-sand/50 bg-white/75 p-4"><summary className="cursor-pointer list-none font-display text-lg font-bold">{participant.name}<span className="float-right font-sans text-sm">{participant.total} verres</span></summary><div className="mt-3 space-y-2">{stats.personalBreakdown[participant.id]?.map((drink) => <div key={drink.id} className="flex items-center gap-2 text-sm"><span>{drink.icon}</span><span className="flex-1 font-bold">{drink.name}</span><strong>×{drink.total}</strong><span className="w-9 text-right text-xs text-morocco/45">{drink.percentage}%</span></div>)}</div></details>)}</div>
+        <div className="mt-3 space-y-3">{stats.participants.filter((item) => item.total > 0).map((participant) => <details key={participant.id} className="rounded-2xl border border-sand/50 bg-white/75 p-4"><summary className="cursor-pointer list-none font-display text-lg font-bold">{participant.name}<span className="float-right font-sans text-sm">{participant.total} verres</span></summary><div className="mt-3 space-y-2">{stats.personalBreakdown[participant.id]?.map((drink) => <div key={drink.id} className="flex items-center gap-2 text-sm"><span className="shrink-0">{(() => { const full = drinkById.get(drink.id); return full ? <DrinkIcon drink={full} size={17} /> : <DrinkIconGlyph iconKey="generic" size={17} />; })()}</span><span className="flex-1 font-bold">{drink.name}</span><strong>×{drink.total}</strong><span className="w-9 text-right text-xs text-morocco/45">{drink.percentage}%</span></div>)}</div></details>)}</div>
       </section>
 
       {weeks.length > 1 ? <section><SectionTitle icon={<CalendarDays />} title="Semaine 1 vs 2" subtitle="Évolution pendant le séjour" /><div className="mt-3 grid grid-cols-2 gap-3">{weeks.slice(0, 2).map((week, index) => { const change = index === 1 && weeks[0].total ? Math.round(((week.total - weeks[0].total) / weeks[0].total) * 100) : null; return <article key={index} className={`rounded-3xl p-5 ${index === 0 ? "bg-white/75" : "bg-terra text-ivory"}`}><p className="text-xs font-black uppercase tracking-wider">Semaine {index + 1}</p><strong className="mt-3 block font-display text-4xl">{week.total}</strong><p className={`text-xs font-bold ${index === 0 ? "text-morocco/50" : "text-sand"}`}>{week.water} eaux{change !== null ? ` · ${change >= 0 ? "+" : ""}${change}%` : ""}</p></article>; })}</div></section> : null}
 
-      <section><SectionTitle icon={<Sparkles />} title="Par boisson" subtitle="Les favoris du séjour" /><div className="mt-3 rounded-3xl bg-white/75 p-4 shadow-card">{stats.drinks.filter((item) => item.total > 0).map((drink) => <div key={drink.id} className="flex min-h-12 items-center gap-3 border-b border-sand/35 last:border-none"><span className="text-xl">{drink.icon}</span><span className="flex-1 text-sm font-extrabold">{drink.name}</span><strong>{drink.total}</strong><span className="w-10 text-right text-xs text-morocco/45">{drink.percentage}%</span></div>)}</div></section>
+      <section><SectionTitle icon={<Sparkles />} title="Par boisson" subtitle="Les favoris du séjour" /><div className="mt-3 rounded-3xl bg-white/75 p-4 shadow-card">{stats.drinks.filter((item) => item.total > 0).map((drink) => <div key={drink.id} className="flex min-h-12 items-center gap-3 border-b border-sand/35 last:border-none"><span className="shrink-0">{(() => { const full = drinkById.get(drink.id); return full ? <DrinkIcon drink={full} size={19} /> : <DrinkIconGlyph iconKey="generic" size={19} />; })()}</span><span className="flex-1 text-sm font-extrabold">{drink.name}</span><strong>{drink.total}</strong><span className="w-10 text-right text-xs text-morocco/45">{drink.percentage}%</span></div>)}</div></section>
     </div>
   );
 }

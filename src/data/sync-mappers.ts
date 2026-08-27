@@ -20,13 +20,17 @@ function base(entity: Trip | Participant | Drink | DrinkEntry | WaterEntry) {
  * valeur serveur intacte lors d’un upsert, et évite qu’un téléphone réattribue
  * l’identité de quelqu’un d’autre en renommant simplement un participant.
  *
- * `created_by` et `action_by` ne sont pas écrasés non plus : l’auteur d’origine
- * reste l’auteur, même quand quelqu’un d’autre corrige la ligne.
+ * `created_by` et `action_by` portent l’auteur d’origine, jamais celui qui pousse :
+ * corriger la ligne de quelqu’un ne réécrit pas sa signature.
  */
 export function toRemote(entityType: EntityType, value: Trip | Participant | Drink | DrinkEntry | WaterEntry): RemoteRow {
   if (entityType === "trip") {
     const entity = value as Trip;
-    return { ...base(entity), name: entity.name, share_code: entity.shareCode, start_date: entity.startDate, end_date: entity.endDate, timezone: entity.timezone };
+    // `created_by` est obligatoire même sur un upsert d’une ligne existante :
+    // PostgreSQL évalue le WITH CHECK de la policy d’insertion sur la ligne
+    // proposée avant de détecter le conflit. L’omettre proposait created_by NULL,
+    // donc `created_by = auth.uid()` était faux et l’upsert repartait en 42501.
+    return { ...base(entity), name: entity.name, share_code: entity.shareCode, start_date: entity.startDate, end_date: entity.endDate, timezone: entity.timezone, created_by: entity.createdBy };
   }
   const entity = value as Participant | Drink | DrinkEntry | WaterEntry;
   if (entityType === "participant") {

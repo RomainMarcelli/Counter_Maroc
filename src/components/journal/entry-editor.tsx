@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { SelectField } from "@/components/ui/select-sheet";
+import { DrinkIcon } from "@/components/drinks/drink-icon";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { useActionDialog } from "@/components/providers/action-dialog-provider";
@@ -25,13 +27,18 @@ export function EntryEditor({ selection, onClose }: { selection: JournalSelectio
     if (!selection || !trip) return;
     setParticipantId(selection.entry.participantId);
     setDrinkId(selection.kind === "drink" ? selection.entry.drinkId : "");
-    setConsumedAt(isoToZonedInput(selection.entry.consumedAt, trip.timezone));
+    setConsumedAt(isoToZonedInput(selection.entry.consumedAt));
     setPaidBy(selection.kind === "drink" ? selection.entry.paidBy ?? "" : "");
   }, [selection, trip]);
   if (!selection || !trip) return null;
+
+  const participantOptions = activeParticipants.map((participant) => ({ value: participant.id, label: participant.name }));
+  const drinkOptions = activeDrinks.map((drink) => ({ value: drink.id, label: drink.name, icon: <DrinkIcon drink={drink} size={20} /> }));
+  const payerOptions = [{ value: "", label: "Non précisé" }, ...participantOptions];
+
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    const time = zonedInputToIso(consumedAt, trip.timezone);
+    const time = zonedInputToIso(consumedAt);
     if (selection.kind === "drink") await updateDrinkEntry(selection.entry, { participantId, drinkId, consumedAt: time, paidBy: paidBy || null });
     else await updateWaterEntry(selection.entry, { participantId, consumedAt: time });
     toast({ message: "Consommation modifiée", detail: navigator.onLine ? "Synchronisation en cours" : "Modification gardée hors ligne" });
@@ -61,12 +68,12 @@ export function EntryEditor({ selection, onClose }: { selection: JournalSelectio
   return (
     <BottomSheet open onClose={onClose} title="Modifier la consommation">
       <form onSubmit={save} className="space-y-4">
-        <label className="block text-sm font-extrabold">Participant<select value={participantId} onChange={(event) => setParticipantId(event.target.value)} className="mt-2 min-h-14 w-full rounded-2xl border border-sand bg-white px-4">{activeParticipants.map((participant) => <option key={participant.id} value={participant.id}>{participant.name}</option>)}</select></label>
-        {selection.kind === "drink" ? <label className="block text-sm font-extrabold">Boisson<select value={drinkId} onChange={(event) => setDrinkId(event.target.value)} className="mt-2 min-h-14 w-full rounded-2xl border border-sand bg-white px-4">{activeDrinks.map((drink) => <option key={drink.id} value={drink.id}>{drink.icon} {drink.name}</option>)}</select></label> : null}
-        <label className="block text-sm font-extrabold">Date et heure · Marrakech<input type="datetime-local" value={consumedAt} onChange={(event) => setConsumedAt(event.target.value)} className="mt-2 min-h-14 w-full rounded-2xl border border-sand bg-white px-4" required /></label>
+        <SelectField label="Participant" value={participantId} onChange={setParticipantId} options={participantOptions} />
+        {selection.kind === "drink" ? <SelectField label="Boisson" value={drinkId} onChange={setDrinkId} options={drinkOptions} /> : null}
+        <label className="block text-sm font-extrabold">Date et heure · Marrakech<input type="datetime-local" value={consumedAt} onChange={(event) => setConsumedAt(event.target.value)} className="mt-2 min-h-14 w-full rounded-2xl border border-sand bg-white px-4 text-base" required /></label>
         {selection.kind === "drink" ? (
           <>
-            <label className="block text-sm font-extrabold">Payé par<select value={paidBy} onChange={(event) => setPaidBy(event.target.value)} className="mt-2 min-h-14 w-full rounded-2xl border border-sand bg-white px-4"><option value="">Non précisé</option>{activeParticipants.map((participant) => <option key={participant.id} value={participant.id}>{participant.name}</option>)}</select></label>
+            <SelectField label="Payé par" value={paidBy} onChange={setPaidBy} placeholder="Non précisé" options={payerOptions} />
             <div className="flex items-center gap-2 rounded-2xl border border-sand bg-white/70 px-3 py-2">
               <span className="min-w-0 flex-1 text-xs font-bold text-morocco/65">{selection.entry.alcoholGrams === null ? "Alcool non estimé pour ce verre" : `≈ ${formatAlcoholGrams(selection.entry.alcoholGrams)} d’alcool pur estimés`}</span>
               <button type="button" onClick={() => void recompute()} className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-black text-terra"><RefreshCw size={14} />Recalculer</button>

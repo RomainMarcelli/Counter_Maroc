@@ -84,6 +84,34 @@ synchronisation continuait sur les boissons et les verres et se heurtait à un `
 vide. Le RPC rend l’ensemble atomique, et il est idempotent : les identifiants viennent du
 téléphone, donc rejouer l’appel ne crée rien en double.
 
+## Le piège de l’upsert et des policies d’insertion
+
+Un `upsert` PostgREST est un `INSERT ... ON CONFLICT (id) DO UPDATE`. PostgreSQL évalue le
+`WITH CHECK` de la policy d’**insertion** sur la ligne proposée **avant** de détecter le
+conflit. Une policy écrite pour encadrer la création s’applique donc aussi à chaque mise à
+jour venue de la file de synchronisation — alors que la policy `UPDATE`, elle, autorise
+l’opération.
+
+Deux conséquences, toutes deux observées contre le projet réel :
+
+| Policy | Ce qui cassait |
+| --- | --- |
+| `trips_insert with check (created_by = auth.uid())` | Tout `upsert` de séjour omettant `created_by` proposait `NULL` → `42501` en boucle sur `/trips`. Et un membre non-créateur, qui renvoie le `created_by` d’origine, était refusé lui aussi. |
+| `drink_entries_insert with check (… action_by = auth.uid())` | Lucas ne pouvait ni corriger ni supprimer une consommation saisie par Romain : sa ligne proposait `action_by = Romain`. |
+
+La correction tient en deux gestes :
+
+- Le téléphone renvoie toujours `created_by` et `action_by` tels quels — l’auteur d’origine
+  reste l’auteur, et la ligne proposée est complète.
+- Les policies d’insertion tolèrent le chemin d’insertion **quand la ligne existe déjà**
+  (`trip_exists`, `drink_entry_exists`, `water_entry_exists`, tous `security definer` pour
+  éviter la récursion d’une policy interrogeant sa propre table).
+
+Aucune permission nouvelle : ces mises à jour étaient déjà autorisées par les policies
+`UPDATE`. Pour une ligne réellement neuve, la contrainte d’origine s’applique intégralement —
+on ne peut toujours pas créer un séjour au nom de quelqu’un d’autre, ni signer une
+consommation d’un autre compte.
+
 ## Ordre imposé à la synchronisation
 
 Le moteur ne pousse **rien** avant d’avoir confirmé le membership serveur du séjour concerné :

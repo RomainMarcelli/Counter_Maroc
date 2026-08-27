@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock3, Plus, RotateCcw, Star } from "lucide-react";
+import { Clock3, Droplets, Plus, RotateCcw, Star } from "lucide-react";
 import clsx from "clsx";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";
@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ParticipantPicker } from "./participant-picker";
 import { DrinkFormSheet } from "./drink-form-sheet";
 import { SelectionSummary } from "./selection-summary";
+import { DrinkIcon, DrinkIconGlyph } from "@/components/drinks/drink-icon";
+import { resolveDrinkIconKey } from "@/domain/drink-icons";
 import { buildDrinkSuggestions, DRINK_FILTERS, filterSuggestions, isDrinkFilter, type DrinkFilter } from "@/domain/favorites";
 import { addDrinkRound, addWaterRound, undoBatch } from "@/data/repository";
 import type { UndoBatch } from "@/domain/types";
@@ -38,7 +40,7 @@ export function QuickAdd() {
   const [formOpen, setFormOpen] = useState(false);
   const [filter, setFilter] = useState<DrinkFilter>("all");
   const [offsetIndex, setOffsetIndex] = useState(0);
-  const pendingSync = useRef<{ operationIds: string[]; message: string; icon: string; queued: boolean } | null>(null);
+  const pendingSync = useRef<{ operationIds: string[]; message: string; icon: React.ReactNode; queued: boolean } | null>(null);
 
   useEffect(() => {
     const stored = readStoredFilter();
@@ -79,7 +81,7 @@ export function QuickAdd() {
   const offset = TIME_OFFSETS[offsetIndex];
   const consumedAt = () => (offset.minutes ? new Date(Date.now() - offset.minutes * 60_000).toISOString() : undefined);
 
-  const announce = (batch: UndoBatch, message: string, icon: string) => {
+  const announce = (batch: UndoBatch, message: string, icon: React.ReactNode) => {
     const online = typeof navigator === "undefined" || navigator.onLine;
     const when = offset.minutes ? `Enregistré ${offset.label.toLowerCase()}` : online ? "Enregistré" : "Enregistré sur ce téléphone";
     pendingSync.current = {
@@ -105,13 +107,13 @@ export function QuickAdd() {
     const message = participantIds.length === 1
       ? `${drink.name} ajouté à ${nameById.get(participantIds[0]) ?? "ce participant"}`
       : `Tournée ajoutée · ${participantIds.length} × ${drink.name}`;
-    announce(batch, message, drink.icon);
+    announce(batch, message, <DrinkIconGlyph iconKey={resolveDrinkIconKey(drink)} size={21} />);
   };
 
   const addWater = async () => {
     if (!trip || !selectedParticipantIds.length) return;
     const batch = await addWaterRound(trip.id, selectedParticipantIds, consumedAt());
-    announce(batch, selectedParticipantIds.length === 1 ? `Eau ajoutée à ${nameById.get(selectedParticipantIds[0])}` : `${selectedParticipantIds.length} eaux ajoutées`, "💧");
+    announce(batch, selectedParticipantIds.length === 1 ? `Eau ajoutée à ${nameById.get(selectedParticipantIds[0])}` : `${selectedParticipantIds.length} eaux ajoutées`, <Droplets size={21} />);
   };
 
   return (
@@ -120,7 +122,7 @@ export function QuickAdd() {
       <SelectionSummary />
       {(latestForSelection || lastRound.length > 1) ? (
         <section className="grid gap-2 sm:grid-cols-2" aria-label="Actions rapides précédentes">
-          {latestForSelection ? <button onClick={() => void add(latestForSelection.drinkId)} className="tap-bump flex min-h-14 items-center gap-3 rounded-2xl bg-sand/50 px-4 text-left text-sm font-extrabold"><RotateCcw size={18} className="text-terra" /><span><span className="block text-[10px] uppercase tracking-wider text-morocco/55">Reprendre</span>{drinkById.get(latestForSelection.drinkId)?.icon} {drinkById.get(latestForSelection.drinkId)?.name}</span></button> : null}
+          {latestForSelection ? <button onClick={() => void add(latestForSelection.drinkId)} className="tap-bump flex min-h-14 items-center gap-3 rounded-2xl bg-sand/50 px-4 text-left text-sm font-extrabold"><RotateCcw size={18} className="text-terra" /><span className="min-w-0 flex-1"><span className="block text-[10px] uppercase tracking-wider text-morocco/55">Reprendre</span><span className="flex items-center gap-1.5 truncate">{(() => { const previous = drinkById.get(latestForSelection.drinkId); return previous ? <><DrinkIcon drink={previous} size={17} />{previous.name}</> : null; })()}</span></span></button> : null}
           {lastRound.length > 1 ? <button onClick={() => void add(lastRound[0].drinkId, lastRound.map((entry) => entry.participantId))} className="tap-bump flex min-h-14 items-center gap-3 rounded-2xl bg-sand/50 px-4 text-left text-sm font-extrabold"><RotateCcw size={18} className="text-terra" /><span><span className="block text-[10px] uppercase tracking-wider text-morocco/55">Dernière tournée</span>Refaire {lastRound.length} × {drinkById.get(lastRound[0].drinkId)?.name}</span></button> : null}
         </section>
       ) : null}
@@ -143,13 +145,13 @@ export function QuickAdd() {
         </div>
         {visibleSuggestions.length === 0 ? (
           filter === "favorites"
-            ? <EmptyState icon="⭐" title="Pas encore de favoris" detail="Tes boissons favorites apparaîtront ici après quelques verres." />
-            : <EmptyState icon="🍹" title="Rien dans cette catégorie" detail="Ajoute une boisson : elle rejoindra ce filtre immédiatement." />
+            ? <EmptyState icon={<Star size={29} />} title="Pas encore de favoris" detail="Tes boissons favorites apparaîtront ici après quelques verres." />
+            : <EmptyState icon={<DrinkIconGlyph iconKey="cocktail" size={29} />} title="Rien dans cette catégorie" detail="Ajoute une boisson : elle rejoindra ce filtre immédiatement." />
         ) : null}
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {visibleSuggestions.map(({ drink, count, isFavorite }) => (
             <button key={drink.id} onClick={() => void add(drink.id)} data-favorite={isFavorite ? "true" : "false"} title={isFavorite ? `Favori · ${count} verre${count > 1 ? "s" : ""}` : undefined} className={clsx("zellige-card tap-bump card-enter relative flex min-h-[94px] flex-col items-start justify-between rounded-[22px] border bg-white/75 p-4 text-left text-morocco shadow-card transition", isFavorite ? "border-terra/45" : "border-sand/60")} style={{ animationDelay: `${Math.min(drink.sortOrder, 8) * 30}ms` }} aria-label={`Ajouter un ${drink.name} aux participants sélectionnés`}>
-              <span className="text-2xl" aria-hidden="true">{drink.icon}</span>
+              <DrinkIcon drink={drink} size={26} className="relative z-10" />
               <span className="relative z-10 text-sm font-black leading-tight">{drink.name}</span>
               {isFavorite ? <span key={count} className="count-bump absolute right-2.5 top-2.5 z-10 flex items-center gap-0.5 rounded-full bg-terra/10 px-1.5 py-0.5 text-[10px] font-black text-terra" aria-hidden="true"><Star size={9} className="fill-terra" />{count}</span> : null}
             </button>
@@ -157,7 +159,7 @@ export function QuickAdd() {
           <button onClick={() => setFormOpen(true)} className="tap-bump flex min-h-[94px] flex-col items-start justify-between rounded-[22px] border-2 border-dashed border-terra/45 bg-terra/5 p-4 text-left text-terra"><Plus size={24} /><span className="text-sm font-black">Ajouter une boisson</span></button>
         </div>
       </section>
-      <button onClick={() => void addWater()} className="tap-bump flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl border-2 border-morocco bg-ivory text-base font-black text-morocco shadow-card"><span className="text-2xl">💧</span> +1 eau <span className="text-xs font-bold text-morocco/50">hors classement alcool</span></button>
+      <button onClick={() => void addWater()} className="tap-bump flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl border-2 border-morocco bg-ivory text-base font-black text-morocco shadow-card"><Droplets size={22} /> +1 eau <span className="text-xs font-bold text-morocco/50">hors classement alcool</span></button>
       <DrinkFormSheet
         open={formOpen}
         onClose={() => setFormOpen(false)}

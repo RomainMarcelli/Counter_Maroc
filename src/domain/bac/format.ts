@@ -1,4 +1,4 @@
-import { getZonedParts } from "@/lib/timezone";
+import { deviceTimeZone, getZonedParts } from "@/lib/timezone";
 import type { BacEstimate } from "./types";
 
 /** Deux décimales maximum, virgule française : on n’affiche jamais une fausse précision. */
@@ -15,7 +15,7 @@ export function formatBacRange(estimate: BacEstimate): string {
   return `≈ ${formatBac(estimate.lowEstimateGPerL)} – ${formatBac(estimate.highEstimateGPerL)} g/L`;
 }
 
-export function formatTripTime(iso: string, timezone: string): string {
+export function formatTripTime(iso: string, timezone: string = deviceTimeZone()): string {
   const parts = getZonedParts(iso, timezone);
   return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
 }

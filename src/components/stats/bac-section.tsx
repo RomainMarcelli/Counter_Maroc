@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { Activity, ChevronRight, Info } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
+import { useBac } from "@/components/providers/bac-provider";
 import { BacDetailSheet } from "@/components/bac/bac-detail-sheet";
-import { useNow } from "@/lib/use-now";
 import { formatDateKey } from "@/lib/timezone";
-import { BAC_DISCLAIMER, buildAlcoholEvents, buildBacProfile, calculateParticipantBacStats, canSeeBac, formatBac, formatTripTime } from "@/domain/bac";
+import { BAC_DISCLAIMER, formatBac, formatTripTime } from "@/domain/bac";
 import type { Participant } from "@/domain/types";
 
 /**
@@ -14,23 +14,23 @@ import type { Participant } from "@/domain/types";
  * en récompense. Le classement ludique du séjour reste celui des verres.
  */
 export function BacSection() {
-  const { trip, activeParticipants, drinks, drinkEntries, actorId } = useTrip();
-  const now = useNow();
+  const { trip } = useTrip();
+  // Lecture seule du calcul partagé : cette section ne peut plus diverger des autres.
+  const { rows: bacRows } = useBac();
   const [detail, setDetail] = useState<Participant | null>(null);
 
   const rows = useMemo(() => {
     if (!trip) return [];
-    return activeParticipants
-      .filter((participant) => canSeeBac(participant, actorId))
-      .map((participant) => {
-        const profile = buildBacProfile(participant);
-        const stats = calculateParticipantBacStats({ profile, events: buildAlcoholEvents(drinkEntries, drinks, participant.id), now, timezone: trip.timezone });
-        const averagePeak = stats.dailyPeaks.length ? stats.dailyPeaks.reduce((total, peak) => total + peak.gPerL, 0) / stats.dailyPeaks.length : 0;
-        return { participant, stats, averagePeak };
-      })
+    return bacRows
+      .flatMap(({ participant, stats }) => (stats ? [{ participant, stats }] : []))
+      .map(({ participant, stats }) => ({
+        participant,
+        stats,
+        averagePeak: stats.dailyPeaks.length ? stats.dailyPeaks.reduce((total, peak) => total + peak.gPerL, 0) / stats.dailyPeaks.length : 0,
+      }))
       .filter((row) => row.stats.tripPeak || row.stats.current.estimatedGPerL > 0)
       .sort((a, b) => a.participant.name.localeCompare(b.participant.name));
-  }, [trip, activeParticipants, drinks, drinkEntries, actorId, now]);
+  }, [trip, bacRows]);
 
   if (!trip || !rows.length) return null;
 
@@ -46,7 +46,7 @@ export function BacSection() {
             <span className="min-w-0 flex-1">
               <strong className="block truncate text-sm">{participant.name}</strong>
               <span className="mt-1 block text-xs font-bold text-morocco/50">
-                {stats.tripPeak ? `Pic du séjour ≈ ${formatBac(stats.tripPeak.gPerL)} g/L · ${formatDateKey(stats.tripPeak.at.slice(0, 10))} ${formatTripTime(stats.tripPeak.at, trip.timezone)}` : "Pas encore de pic estimé"}
+                {stats.tripPeak ? `Pic du séjour ≈ ${formatBac(stats.tripPeak.gPerL)} g/L · ${formatDateKey(stats.tripPeak.at.slice(0, 10))} ${formatTripTime(stats.tripPeak.at)}` : "Pas encore de pic estimé"}
               </span>
               {stats.dailyPeaks.length > 1 ? <span className="mt-0.5 block text-xs font-bold text-morocco/40">Moyenne des pics quotidiens ≈ {formatBac(averagePeak)} g/L</span> : null}
             </span>

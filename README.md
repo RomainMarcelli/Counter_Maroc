@@ -58,6 +58,17 @@ Dans le Dashboard Supabase :
 
 Ne désactivez jamais RLS. Les droits reposent entièrement sur `trip_members`.
 
+## Inviter le crew
+
+Réglages → **Inviter des amis**. Le QR Code n’occupe plus la page : il s’ouvre dans sa
+propre feuille, avec le code, le lien et le partage natif iOS.
+
+Le lien a la forme `https://…/join?code=MAROC-26-X7K4`. Ouvert par quelqu’un qui n’a pas
+encore de compte, le code est mis de côté pendant l’inscription puis reproposé
+automatiquement — il n’y a jamais à le ressaisir. `join_trip_by_code` étant idempotent,
+accepter deux fois la même invitation ne crée pas un second membership. L’ancien format
+`/?join=CODE` des QR Codes déjà distribués reste accepté.
+
 ## Photos de profil
 
 Dans **Réglages > Participants**, le bouton appareil photo accepte une image JPG, PNG ou WebP de 5 Mo maximum. L’application la recadre en carré, la compresse en WebP 512 × 512, l’envoie dans Supabase Storage puis synchronise son URL avec le crew. L’envoi d’une photo nécessite une connexion ; le reste de l’application reste offline-first.
@@ -87,6 +98,26 @@ SUPABASE_E2E=1 npx playwright test --project=Comptes   # deux comptes, deux navi
 
 Chacune crée ses comptes et son séjour de test, puis les supprime à la fin.
 
+## Sur iPhone
+
+Cinq onglets en bas — Rapide, Journal, Alcoolémie, Stats, Bilan — dimensionnés pour rester
+lisibles dès 375 px de large, avec la safe area respectée. L’écran Rapide présente le crew
+en grille 2 × 2 : une carte par personne, sélection multiple pour les tournées.
+
+Dans le Journal, un glissement vers la gauche révèle **Supprimer** ; un glissement franc
+supprime directement, avec **ANNULER** dans le snackbar. Le scroll vertical reste
+prioritaire : le geste n’est capté que lorsque le déplacement horizontal dépasse nettement
+le vertical. Le tap continue d’ouvrir l’édition complète.
+
+Les listes déroulantes n’utilisent plus `<select>` : les choix courts sont des boutons,
+les longues listes ouvrent une feuille aux lignes larges.
+
+Chaque verre porte la couleur de ce qu’il contient : bière dorée, vin rouge bordeaux,
+Cuba Libre brun, mojito vert. Ni le pictogramme ni la teinte ne sont stockés — ils se
+déduisent du nom et de la catégorie (`resolveDrinkIconKey`, `resolveDrinkTint`), donc une
+boisson créée hier se colore sans migration, et la renommer suffit à la recolorer. Sur les
+fonds verts, un conteneur `.tint-neutral` ramène toute sa sous-arborescence au sable.
+
 ## Tester la PWA et le hors-ligne
 
 1. Lancer un build de production avec `npm run build && npm run start`.
@@ -102,4 +133,5 @@ Sur iPhone : Safari > Partager > **Sur l’écran d’accueil**. Sur Android : m
 - [Architecture](docs/ARCHITECTURE.md)
 - [Comptes, séjours et identités](docs/AUTH.md)
 - [Synchronisation offline](docs/OFFLINE_SYNC.md)
+- [Statut réseau, Vercel et reprise PWA](docs/SYNC_STATUS.md)
 - [Base de données et sécurité](docs/DATABASE.md)

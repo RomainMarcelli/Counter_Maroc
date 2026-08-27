@@ -48,9 +48,12 @@ test("modifie puis supprime une consommation", async ({ page }) => {
   await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
   await page.getByRole("link", { name: "Journal" }).click();
   await page.getByText("Romain · Mojito").first().click();
-  await page.getByLabel("Participant").selectOption({ label: "Lucas" });
-  await page.getByLabel("Boisson").selectOption({ label: "🍺 Bière locale" });
-  await page.getByRole("button", { name: "Enregistrer" }).click();
+  const editor = page.getByRole("dialog", { name: "Modifier la consommation" });
+  await editor.getByRole("button", { name: "Participant" }).click();
+  await page.getByRole("option", { name: "Lucas" }).click();
+  await editor.getByRole("button", { name: "Boisson" }).click();
+  await page.getByRole("option", { name: "Bière locale" }).click();
+  await editor.getByRole("button", { name: "Enregistrer" }).click();
   await expect(page.getByText("Lucas · Bière locale").first()).toBeVisible();
   await page.getByText("Lucas · Bière locale").first().click();
   await page.getByRole("button", { name: "Supprimer" }).click();
@@ -118,6 +121,50 @@ test("sélectionne, supprime puis restaure plusieurs verres d’un coup", async 
   await expect(rows).toHaveCount(before);
 });
 
+test("glisser une ligne du Journal la supprime, et Annuler la ramène", async ({ page }) => {
+  await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
+  await page.getByRole("link", { name: "Journal" }).click();
+  await expect(page.getByRole("heading", { name: "Journal" })).toBeVisible();
+
+  const rows = page.locator("main button:has(strong)");
+  await expect(rows.first()).toBeVisible();
+  const before = await rows.count();
+
+  const card = rows.first();
+  const box = await card.boundingBox();
+  if (!box) throw new Error("carte introuvable");
+  // Glissement franc vers la gauche : au-delà du seuil, la ligne part directement.
+  await page.mouse.move(box.x + box.width - 24, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 120, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.move(box.x + 20, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(rows).toHaveCount(before - 1);
+  await expect(page.getByText(/supprimé/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(rows).toHaveCount(before);
+});
+
+test("l’onglet Alcoolémie liste le crew et garde l’avertissement", async ({ page }) => {
+  await page.getByRole("link", { name: "Alcoolémie" }).click();
+  await expect(page.getByRole("heading", { name: "Alcoolémie estimée" })).toBeVisible();
+  await expect(page.getByText(/Ne pas utiliser cette estimation pour décider de conduire/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Réglages d’alcoolémie de Romain/ })).toBeVisible();
+});
+
+test("le QR Code ne s’affiche que dans sa modale", async ({ page }) => {
+  await page.getByRole("button", { name: "Ouvrir les réglages" }).click();
+  const settings = page.getByRole("dialog", { name: "Le séjour" });
+  await expect(settings.getByRole("img", { name: /QR Code/ })).toHaveCount(0);
+
+  await settings.getByRole("button", { name: "Afficher le QR Code" }).click();
+  const invite = page.getByRole("dialog", { name: "Inviter des amis" });
+  await expect(invite.getByRole("img", { name: /QR Code/ })).toBeVisible();
+  await expect(invite.getByText(/\/join\?code=MAROC-26-X7K4/)).toBeVisible();
+});
+
 test("la synchronisation Supabase rejoue la queue après reconnexion", async ({ page, context }) => {
   test.skip(!process.env.NEXT_PUBLIC_SUPABASE_URL, "Nécessite un projet Supabase de test");
   await context.setOffline(true);
@@ -148,7 +195,11 @@ test("configure un poids, ajoute deux whiskys et suit l’alcoolémie estimée",
   // Le détail expose le pic et la courbe, recalculés depuis les consommations.
   await page.getByRole("button", { name: /Voir le détail de l’alcoolémie estimée de Romain/ }).click();
   const detail = page.getByRole("dialog", { name: /Alcoolémie estimée · Romain/ });
-  await expect(detail.getByText("Pic estimé")).toBeVisible();
+  await expect(detail.getByText("Pic estimé", { exact: true })).toBeVisible();
+  await expect(detail.getByRole("heading", { name: "Boissons prises" })).toBeVisible();
+  await expect(detail.getByText("Total alcool pur")).toBeVisible();
+  await expect(detail.getByText("Whisky", { exact: true }).first()).toBeVisible();
+  await expect(detail.getByText(/≈ 12,6 g/).first()).toBeVisible();
   await expect(detail.getByRole("img", { name: /Courbe d’alcoolémie estimée de Romain/ })).toBeVisible();
   await expect(detail.getByText(/Ne pas utiliser cette estimation pour décider de conduire/)).toBeVisible();
   await detail.getByRole("button", { name: "Fermer" }).click();
@@ -171,4 +222,14 @@ test("configure un poids, ajoute deux whiskys et suit l’alcoolémie estimée",
   await page.getByRole("link", { name: "Journal" }).click();
   await expect(page.getByText("Romain · Whisky")).toHaveCount(3);
   await expect(estimate).toBeHidden();
+});
+
+test("le Hall of Fame affiche le nouveau podium et les badges vectoriels", async ({ page }) => {
+  await page.getByRole("link", { name: "Bilan" }).click();
+
+  await expect(page.getByRole("heading", { name: "Hall of Fame" })).toBeVisible();
+  await expect(page.getByLabel("Podium du séjour")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mur des trophées" })).toBeVisible();
+  await expect(page.getByText("Plus gros buveur")).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="trophies-title"] svg').first()).toBeVisible();
 });

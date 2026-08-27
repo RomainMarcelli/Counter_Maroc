@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { Droplets, RotateCcw, Trash2 } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";
 import { listDeletedEntries, restoreEntries, type DeletedEntry } from "@/data/repository";
 import { formatTripDateTime } from "@/lib/timezone";
+import { DrinkIcon, DrinkIconGlyph } from "@/components/drinks/drink-icon";
 
 /** Corbeille : les suppressions sont douces, tout reste restaurable après les 6 secondes du snackbar. */
 export function TrashSection({ open }: { open: boolean }) {
@@ -42,10 +43,10 @@ export function TrashSection({ open }: { open: boolean }) {
       <div className="mt-3 space-y-2">
         {entries.map((entry) => (
           <div key={`${entry.kind}-${entry.id}`} className="flex min-h-14 items-center gap-2 rounded-xl bg-white px-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sand/35 text-base">{entry.kind === "water" ? "💧" : (entry.drinkId ? drinkById.get(entry.drinkId)?.icon : null) ?? "🍹"}</span>
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sand/35 text-morocco/75">{(() => { const drink = entry.drinkId ? drinkById.get(entry.drinkId) : undefined; return entry.kind === "water" ? <Droplets size={17} /> : drink ? <DrinkIcon drink={drink} size={17} /> : <DrinkIconGlyph iconKey="generic" size={17} />; })()}</span>
             <span className="min-w-0 flex-1">
               <strong className="block truncate text-sm">{participantById.get(entry.participantId)?.name ?? "Participant supprimé"} · {entry.kind === "water" ? "Eau" : (entry.drinkId ? drinkById.get(entry.drinkId)?.name : null) ?? entry.drinkName ?? "Boisson supprimée"}</strong>
-              <span className="block truncate text-xs font-bold text-morocco/50">{formatTripDateTime(entry.consumedAt, trip.timezone)}</span>
+              <span className="block truncate text-xs font-bold text-morocco/50">{formatTripDateTime(entry.consumedAt)}</span>
             </span>
             <button onClick={() => void restore(entry)} className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-black text-terra" aria-label="Restaurer cette consommation"><RotateCcw size={15} />Restaurer</button>
           </div>

@@ -1,4 +1,4 @@
-import { zonedDayKey, zonedInputToIso } from "@/lib/timezone";
+import { deviceTimeZone, zonedDayKey, zonedInputToIso } from "@/lib/timezone";
 import { buildBacCurve, estimateBacAt, findPeakBac, isUsableProfile, toMillis } from "./widmark";
 import type { AlcoholEvent, BacPeak, BacPoint, BacProfile, DailyBacPeak, ParticipantBacStats } from "./types";
 
@@ -17,7 +17,7 @@ export function buildBacTimeline({ profile, events, from, to }: { profile: BacPr
 }
 
 /** Bornes de journée locales entre deux instants, pour ne pas rater un pic à cheval sur minuit. */
-function dayBoundaries(fromMs: number, toMs: number, timezone: string): number[] {
+function dayBoundaries(fromMs: number, toMs: number, timezone: string = deviceTimeZone()): number[] {
   const marks: number[] = [];
   for (let cursor = fromMs; cursor <= toMs + DAY_MS && marks.length < 400; cursor += DAY_MS) {
     const key = zonedDayKey(new Date(cursor).toISOString(), timezone);
@@ -31,7 +31,7 @@ function dayBoundaries(fromMs: number, toMs: number, timezone: string): number[]
  * Statistiques d’un participant : taux courant, pic du séjour et pic de chaque journée.
  * Tout est recalculé depuis les consommations, jamais lu depuis un champ stocké.
  */
-export function calculateParticipantBacStats({ profile, events, now, timezone }: { profile: BacProfile | null; events: AlcoholEvent[]; now: string | number | Date; timezone: string }): ParticipantBacStats {
+export function calculateParticipantBacStats({ profile, events, now, timezone = deviceTimeZone() }: { profile: BacProfile | null; events: AlcoholEvent[]; now: string | number | Date; timezone?: string }): ParticipantBacStats {
   const current = estimateBacAt({ profile, events, at: now });
   if (!isUsableProfile(profile) || !events.length) return { current, tripPeak: null, dailyPeaks: [] };
 

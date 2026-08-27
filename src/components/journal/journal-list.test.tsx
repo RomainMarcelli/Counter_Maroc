@@ -32,6 +32,10 @@ vi.mock("@/components/providers/trip-provider", () => ({ useTrip: () => mocks.tr
 
 import { JournalList } from "./journal-list";
 
+// jsdom n’implémente pas la capture de pointeur utilisée par le geste de suppression.
+if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => undefined;
+if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => undefined;
+
 const base = { tripId: "trip", createdAt: "2026-09-07T10:00:00Z", updatedAt: "2026-09-07T10:00:00Z", deletedAt: null };
 const trip: Trip = { ...base, id: "trip", name: "Marrakech 2026", shareCode: "CREW-01", startDate: "2026-09-07", endDate: "2026-09-16", timezone: "Africa/Casablanca", createdBy: "device" };
 const participants: Participant[] = [
@@ -68,6 +72,14 @@ function setTrip(overrides: Partial<TripValue> = {}): void {
 const renderJournal = () => render(<ToastProvider><ActionDialogProvider><JournalList /></ActionDialogProvider></ToastProvider>);
 const row = (label: string) => screen.getByText(label).closest("button") as HTMLButtonElement;
 const startPicking = () => fireEvent.click(screen.getByRole("button", { name: "Sélectionner" }));
+/** Rejoue un glissement vers la gauche sur la carte, jusqu’au seuil de suppression. */
+const swipeAway = (label: string) => {
+  const surface = row(label).parentElement as HTMLElement;
+  fireEvent.pointerDown(surface, { pointerId: 1, clientX: 260, clientY: 100 });
+  fireEvent.pointerMove(surface, { pointerId: 1, clientX: 200, clientY: 100 });
+  fireEvent.pointerMove(surface, { pointerId: 1, clientX: 60, clientY: 100 });
+  fireEvent.pointerUp(surface, { pointerId: 1, clientX: 60, clientY: 100 });
+};
 const confirmDelete = async (name: RegExp) => {
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(within(dialog).getByRole("button", { name }));
@@ -149,6 +161,44 @@ describe("sélection multiple du Journal", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Sélectionner" })).toBeInTheDocument());
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  it("supprime au glissement et propose d’annuler", async () => {
+    setTrip();
+    renderJournal();
+
+    swipeAway("Romain · Mojito");
+
+    await waitFor(() => expect(mocks.deleteEntries).toHaveBeenCalledWith({ drinkEntryIds: ["d1"], waterEntryIds: [] }));
+    // Pas de confirmation : le geste est le raccourci, ANNULER est le filet.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(await screen.findByText("Mojito de Romain supprimé")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Annuler" }));
+    await waitFor(() => expect(mocks.restoreEntries).toHaveBeenCalledWith({ drinkEntryIds: ["d1"], waterEntryIds: [] }));
+  });
+
+  it("supprime hors ligne et le dit, sans rien perdre", async () => {
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    setTrip();
+    renderJournal();
+
+    swipeAway("Romain · Mojito");
+
+    await waitFor(() => expect(mocks.deleteEntries).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Suppression conservée sur ce téléphone")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Annuler" })).toBeInTheDocument();
+    online.mockRestore();
+  });
+
+  it("ne déclenche aucun glissement pendant la sélection multiple", async () => {
+    setTrip();
+    renderJournal();
+    startPicking();
+
+    swipeAway("Romain · Mojito");
+
+    expect(mocks.deleteEntries).not.toHaveBeenCalled();
   });
 
   it("oublie les lignes masquées par un changement de filtre", () => {

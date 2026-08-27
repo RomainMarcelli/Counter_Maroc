@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, Clock3, Martini, UserRound } from "lucide-react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { SelectField } from "@/components/ui/select-sheet";
 import { calculateStats, type DayStat } from "@/domain/stats";
 import type { Drink, DrinkEntry, Participant, Trip, WaterEntry } from "@/domain/types";
 import { formatDateKey, zonedDayKey } from "@/lib/timezone";
@@ -25,7 +26,7 @@ export function TemporalAnalysis({ trip, participants, drinks, drinkEntries, wat
   const personStats = useMemo(() => calculateStats(trip, participants, drinks, personEntries, personWater), [trip, participants, drinks, personEntries, personWater]);
   const filterPeriod = <T extends { consumedAt: string }>(entries: T[]) => entries.filter((entry) => {
     if (period === "all") return true;
-    const dayKey = zonedDayKey(entry.consumedAt, trip.timezone);
+    const dayKey = zonedDayKey(entry.consumedAt);
     if (period.startsWith("day:")) return dayKey === period.slice(4);
     const weekIndex = Number(period.slice(5));
     return Math.floor((Date.parse(dayKey) - Date.parse(trip.startDate)) / (7 * 86_400_000)) === weekIndex;
@@ -47,8 +48,22 @@ export function TemporalAnalysis({ trip, participants, drinks, drinkEntries, wat
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-xs font-extrabold uppercase tracking-wider text-morocco/60"><span className="mb-2 flex items-center gap-1.5"><UserRound size={14} />Participant</span><select value={participantId} onChange={(event) => setParticipantId(event.target.value)} className="min-h-12 w-full rounded-xl border border-sand bg-white px-3 text-sm font-bold text-morocco"><option value="all">Tout le monde</option>{activeParticipants.map((participant) => <option key={participant.id} value={participant.id}>{participant.name}</option>)}</select></label>
-        <label className="text-xs font-extrabold uppercase tracking-wider text-morocco/60"><span className="mb-2 flex items-center gap-1.5"><CalendarDays size={14} />Période</span><select value={period} onChange={(event) => setPeriod(event.target.value as PeriodFilter)} className="min-h-12 w-full rounded-xl border border-sand bg-white px-3 text-sm font-bold text-morocco"><option value="all">Tout le séjour</option>{Array.from({ length: weekCount }, (_, index) => <option key={index} value={`week:${index}`}>Semaine {index + 1}</option>)}{personStats.days.map((day) => <option key={day.date} value={`day:${day.date}`}>Journée du {formatDateKey(day.date)}</option>)}</select></label>
+        <SelectField
+          label="Participant"
+          value={participantId}
+          onChange={setParticipantId}
+          options={[{ value: "all", label: "Tout le monde", icon: <UserRound size={18} /> }, ...activeParticipants.map((participant) => ({ value: participant.id, label: participant.name }))]}
+        />
+        <SelectField
+          label="Période"
+          value={period}
+          onChange={(value) => setPeriod(value as PeriodFilter)}
+          options={[
+            { value: "all", label: "Tout le séjour", icon: <CalendarDays size={18} /> },
+            ...Array.from({ length: weekCount }, (_, index) => ({ value: `week:${index}`, label: `Semaine ${index + 1}` })),
+            ...personStats.days.map((day) => ({ value: `day:${day.date}`, label: `Journée du ${formatDateKey(day.date)}` })),
+          ]}
+        />
       </div>
 
       <div className="rounded-3xl bg-white/75 p-5 shadow-card">
