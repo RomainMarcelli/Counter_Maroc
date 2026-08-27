@@ -3,7 +3,7 @@ import type { AlcoholComponent } from "./bac/types";
 export type { AlcoholComponent };
 
 export type DrinkCategory = "beer" | "wine" | "spirit" | "cocktail";
-export type EntityType = "trip" | "participant" | "drink" | "drinkEntry" | "waterEntry";
+export type EntityType = "trip" | "participant" | "drink" | "drinkEntry" | "waterEntry" | "challenge" | "forfeit" | "tripPhoto";
 export type QueueStatus = "pending" | "syncing" | "failed";
 
 export interface EntityBase {
@@ -86,6 +86,70 @@ export interface WaterEntry extends EntityBase {
   roundId: string | null;
 }
 
+export type ChallengeScope = "individual" | "group";
+export type ChallengePeriod = "day" | "trip";
+export type ChallengeTarget =
+  | "manual"
+  | "water_count"
+  | "drink_variety"
+  | "no_spirits"
+  | "water_after_13"
+  | "new_cocktail"
+  | "water_between_drinks"
+  | "full_round"
+  | "group_photo"
+  | "category_variety";
+
+export interface Challenge extends EntityBase {
+  title: string;
+  description: string;
+  scope: ChallengeScope;
+  period: ChallengePeriod;
+  /** Clé locale YYYY-MM-DD de la journée 08h→08h, uniquement pour un challenge quotidien. */
+  dayKey: string | null;
+  targetType: ChallengeTarget;
+  targetValue: number;
+  /** null pour un challenge collectif ou attribué à tout le groupe. */
+  participantId: string | null;
+  reward: string | null;
+  status: "active" | "completed" | "failed";
+  completedAt: string | null;
+  createdBy: string;
+}
+
+export interface Forfeit extends EntityBase {
+  title: string;
+  description: string;
+  participantId: string | null;
+  challengeId: string | null;
+  status: "pending" | "completed";
+  completedAt: string | null;
+  createdBy: string;
+}
+
+export interface TripPhoto extends EntityBase {
+  storagePath: string;
+  takenAt: string;
+  uploadedBy: string;
+  caption: string | null;
+}
+
+/** File locale séparée : le blob optimisé ne transite jamais dans la file JSON de synchronisation. */
+export interface PhotoUpload {
+  id: string;
+  tripId: string;
+  kind: "avatar" | "memory";
+  participantId: string | null;
+  photoId: string | null;
+  blob: Blob;
+  extension: "webp" | "jpeg";
+  takenAt: string;
+  createdAt: string;
+  status: "pending" | "uploading" | "failed";
+  attempts: number;
+  lastError: string | null;
+}
+
 export interface SyncOperation {
   id: string;
   tripId: string;
@@ -112,6 +176,9 @@ export interface LocalSnapshot {
   drinks: Drink[];
   drinkEntries: DrinkEntry[];
   waterEntries: WaterEntry[];
+  challenges: Challenge[];
+  forfeits: Forfeit[];
+  tripPhotos: TripPhoto[];
 }
 
 export interface UndoBatch {

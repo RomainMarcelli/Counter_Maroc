@@ -5,7 +5,7 @@ import { ChevronRight, Droplets, Users } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useBac } from "@/components/providers/bac-provider";
 import { BacDetailSheet } from "@/components/bac/bac-detail-sheet";
-import { zonedDayKey } from "@/lib/timezone";
+import { getTripDayKey } from "@/lib/trip-day";
 import { formatBac } from "@/domain/bac";
 import type { Participant } from "@/domain/types";
 
@@ -27,10 +27,10 @@ export function SelectionSummary() {
 
   const summary = useMemo(() => {
     if (!trip || !single) return null;
-    const today = zonedDayKey(new Date(now).toISOString());
+    const today = getTripDayKey(now);
     const mine = drinkEntries.filter((entry) => !entry.deletedAt && entry.participantId === single.id);
-    const drinksToday = mine.filter((entry) => zonedDayKey(entry.consumedAt) === today);
-    const watersToday = waterEntries.filter((entry) => !entry.deletedAt && entry.participantId === single.id && zonedDayKey(entry.consumedAt) === today);
+    const drinksToday = mine.filter((entry) => getTripDayKey(entry.consumedAt) === today);
+    const watersToday = waterEntries.filter((entry) => !entry.deletedAt && entry.participantId === single.id && getTripDayKey(entry.consumedAt) === today);
     const lastWater = watersToday.map((entry) => entry.consumedAt).sort().at(-1) ?? "";
     const sinceWater = drinksToday.filter((entry) => entry.consumedAt > lastWater).length;
     // Un verre à peine servi n’est pas encore passé dans le sang : on le dit plutôt

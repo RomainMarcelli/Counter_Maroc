@@ -6,8 +6,8 @@ import { getSupabase } from "./supabase";
 import { authErrorMessage, currentUserId, isAuthorizationError } from "./auth";
 import type { EntityBase, EntityType, Participant, SyncOperation, Trip } from "@/domain/types";
 
-const PRIORITY: Record<EntityType, number> = { trip: 0, participant: 1, drink: 2, drinkEntry: 3, waterEntry: 3 };
-const SYNCED_ENTITIES: EntityType[] = ["trip", "participant", "drink", "drinkEntry", "waterEntry"];
+const PRIORITY: Record<EntityType, number> = { trip: 0, participant: 1, drink: 2, drinkEntry: 3, waterEntry: 3, challenge: 4, forfeit: 4, tripPhoto: 4 };
+const SYNCED_ENTITIES: EntityType[] = ["trip", "participant", "drink", "drinkEntry", "waterEntry", "challenge", "forfeit", "tripPhoto"];
 
 /**
  * Un refus d’autorisation ne se résout pas en réessayant : on espace fortement la
@@ -27,7 +27,10 @@ async function localEntity(entityType: EntityType, id: string): Promise<EntityBa
   if (entityType === "participant") return db.participants.get(id);
   if (entityType === "drink") return db.drinks.get(id);
   if (entityType === "drinkEntry") return db.drinkEntries.get(id);
-  return db.waterEntries.get(id);
+  if (entityType === "waterEntry") return db.waterEntries.get(id);
+  if (entityType === "challenge") return db.challenges.get(id);
+  if (entityType === "forfeit") return db.forfeits.get(id);
+  return db.tripPhotos.get(id);
 }
 
 async function mergeRemote(entityType: EntityType, row: Record<string, unknown>): Promise<void> {
@@ -40,7 +43,10 @@ async function mergeRemote(entityType: EntityType, row: Record<string, unknown>)
   else if (entityType === "participant") await db.participants.put(remote as never);
   else if (entityType === "drink") await db.drinks.put(remote as never);
   else if (entityType === "drinkEntry") await db.drinkEntries.put(remote as never);
-  else await db.waterEntries.put(remote as never);
+  else if (entityType === "waterEntry") await db.waterEntries.put(remote as never);
+  else if (entityType === "challenge") await db.challenges.put(remote as never);
+  else if (entityType === "forfeit") await db.forfeits.put(remote as never);
+  else await db.tripPhotos.put(remote as never);
   if (queued) await db.syncQueue.delete(queued.id);
 }
 
@@ -201,7 +207,10 @@ class SyncEngine {
       }
 
       if (failure) await recordError(failure.kind, failure.message);
-      else await clearError();
+      else {
+        await clearError();
+        await db.settings.put({ key: "syncLastSuccessAt", value: new Date().toISOString() });
+      }
     } catch (error) {
       await recordError(isAuthorizationError(error) ? "auth" : "network", authErrorMessage(error));
     } finally {
@@ -366,6 +375,7 @@ class SyncEngine {
         db.syncQueue.where("status").equals("failed").count(),
       ]);
       if (storedKind?.value === "network" && failed === 0) await clearError();
+      await db.settings.put({ key: "syncLastSuccessAt", value: new Date().toISOString() });
     } catch (error) {
       await recordError(isAuthorizationError(error) ? "membership" : "network", authErrorMessage(error));
       announce();

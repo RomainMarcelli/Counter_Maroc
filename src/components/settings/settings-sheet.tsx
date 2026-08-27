@@ -14,7 +14,7 @@ import { DrinkFormSheet } from "@/components/quick/drink-form-sheet";
 import { DrinkIcon } from "@/components/drinks/drink-icon";
 import { InviteSheet } from "./invite-sheet";
 import { formatTripRange } from "@/lib/timezone";
-import { removeParticipantPhoto, uploadParticipantPhoto } from "@/data/profile-photos";
+import { removeParticipantPhoto, retryPhotoUploads, uploadParticipantPhoto, type PhotoStage } from "@/data/profile-photos";
 import { BacProfileSheet } from "@/components/bac/bac-profile-sheet";
 import { TrashSection } from "./trash-section";
 import { calculateDrinkAlcoholGrams, canSeeBac, formatAlcoholGrams } from "@/domain/bac";
@@ -29,6 +29,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [editingDrink, setEditingDrink] = useState<Drink | null>(null);
   const [partyMode, setPartyMode] = useState(false);
   const [uploadingParticipantId, setUploadingParticipantId] = useState<string | null>(null);
+  const [photoStage, setPhotoStage] = useState<PhotoStage | null>(null);
   const [bacParticipant, setBacParticipant] = useState<Participant | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -68,12 +69,15 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     if (!participant) return;
     setUploadingParticipantId(participantId);
     try {
-      await uploadParticipantPhoto(participant, file);
-      toast({ message: `Photo de ${participant.name} enregistrée`, detail: "Elle sera visible par tout le crew." });
+      const result = await uploadParticipantPhoto(participant, file, setPhotoStage);
+      toast(result.status === "queued"
+        ? { message: "Photo enregistrée sur l’iPhone", detail: "En attente de synchronisation." }
+        : { message: `Photo de ${participant.name} enregistrée`, detail: "Elle est visible par tout le crew." });
     } catch (error) {
-      toast({ message: "Photo non enregistrée", detail: error instanceof Error ? error.message : undefined, tone: "error" });
+      toast({ message: "Impossible d’envoyer la photo", detail: error instanceof Error ? error.message : undefined, tone: "error", actionLabel: "Réessayer", onAction: retryPhotoUploads });
     } finally {
       setUploadingParticipantId(null);
+      setPhotoStage(null);
     }
   };
   const removePhoto = async (participant: Participant) => {
@@ -211,8 +215,8 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
               return <div key={participant.id} className="flex min-h-14 items-center gap-2 rounded-xl bg-white px-3">
                 <ParticipantAvatar participant={participant} />
                 <span className="min-w-0 flex-1 truncate text-sm font-extrabold">{participant.name}</span>
-                <input id={`photo-${participant.id}`} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={Boolean(uploadingParticipantId)} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void setPhoto(participant.id, file); }} />
-                <label htmlFor={`photo-${participant.id}`} className={`flex size-11 cursor-pointer items-center justify-center rounded-xl ${uploadingParticipantId ? "pointer-events-none opacity-50" : "hover:bg-sand/30"}`} aria-label={`${participant.avatarUrl ? "Changer" : "Ajouter"} la photo de ${participant.name}`}>{uploading ? <LoaderCircle size={17} className="animate-spin" /> : <Camera size={17} />}</label>
+                <input id={`photo-${participant.id}`} type="file" accept="image/*,.heic,.heif" className="sr-only" disabled={Boolean(uploadingParticipantId)} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void setPhoto(participant.id, file); }} />
+                <label htmlFor={`photo-${participant.id}`} className={`flex min-h-11 cursor-pointer items-center justify-center gap-1 rounded-xl px-2 ${uploadingParticipantId ? "pointer-events-none opacity-50" : "hover:bg-sand/30"}`} aria-label={`${participant.avatarUrl ? "Changer" : "Ajouter"} la photo de ${participant.name}`}>{uploading ? <><LoaderCircle size={17} className="animate-spin" /><span className="max-w-24 text-[9px] font-black">{photoStage === "preparing" ? "Préparation…" : photoStage === "uploading" ? "Envoi…" : "Attente…"}</span></> : <Camera size={17} />}</label>
                 {participant.avatarUrl ? <button onClick={() => void removePhoto(participant)} className="flex size-11 items-center justify-center text-terra" aria-label={`Retirer la photo de ${participant.name}`}><ImageOff size={17} /></button> : null}
                 <button onClick={() => setBacParticipant(participant)} className={`flex size-11 items-center justify-center ${canSeeBac(participant, actorId) ? "text-terra" : "text-morocco/40"}`} aria-label={`Estimation d’alcoolémie de ${participant.name}`} title={participant.bacEnabled ? "Estimation activée" : "Estimation désactivée"}><Activity size={17} /></button>
                 <button onClick={() => void renameParticipant(participant)} className="flex size-11 items-center justify-center" aria-label={`Renommer ${participant.name}`}><Pencil size={17} /></button>

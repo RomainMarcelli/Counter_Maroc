@@ -98,5 +98,5 @@ export function demoSnapshot(): LocalSnapshot {
       });
     }
   }
-  return { trip, participants, drinks, drinkEntries, waterEntries };
+  return { trip, participants, drinks, drinkEntries, waterEntries, challenges: [], forfeits: [], tripPhotos: [] };
 }

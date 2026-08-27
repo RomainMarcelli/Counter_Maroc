@@ -128,7 +128,7 @@ export function BacDetailSheet({ participant, onClose }: { participant: Particip
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <h4 className="truncate text-sm font-extrabold">{item.name}</h4>
-                              <p className="text-[10px] font-bold text-morocco/45">{formatDateKey(zonedDayKey(item.consumedAt, trip.timezone))} · {formatTripTime(item.consumedAt, trip.timezone)}</p>
+                              <p className="text-[10px] font-bold text-morocco/45">{formatDateKey(zonedDayKey(item.consumedAt))} · {formatTripTime(item.consumedAt)}</p>
                             </div>
                             <strong className="shrink-0 text-sm">≈ {formatAlcoholGrams(item.pureAlcoholGrams)}</strong>
                           </div>

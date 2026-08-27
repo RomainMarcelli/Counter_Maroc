@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Drink, DrinkEntry, LocalSetting, Participant, SyncOperation, Trip, WaterEntry } from "@/domain/types";
+import type { Challenge, Drink, DrinkEntry, Forfeit, LocalSetting, Participant, PhotoUpload, SyncOperation, Trip, TripPhoto, WaterEntry } from "@/domain/types";
 
 export class MarrakechDatabase extends Dexie {
   trips!: EntityTable<Trip, "id">;
@@ -7,6 +7,10 @@ export class MarrakechDatabase extends Dexie {
   drinks!: EntityTable<Drink, "id">;
   drinkEntries!: EntityTable<DrinkEntry, "id">;
   waterEntries!: EntityTable<WaterEntry, "id">;
+  challenges!: EntityTable<Challenge, "id">;
+  forfeits!: EntityTable<Forfeit, "id">;
+  tripPhotos!: EntityTable<TripPhoto, "id">;
+  photoUploads!: EntityTable<PhotoUpload, "id">;
   syncQueue!: EntityTable<SyncOperation, "id">;
   settings!: EntityTable<LocalSetting, "key">;
 
@@ -78,6 +82,14 @@ export class MarrakechDatabase extends Dexie {
         // `deviceId` reste : il identifie le téléphone, pas un compte.
         if (setting.key !== "deviceId") delete context.value;
       });
+    });
+    // v5 : défis/gages partagés et souvenirs. Les blobs restent dans une file locale
+    // dédiée ; seules leurs métadonnées synchronisables vont dans `syncQueue`.
+    this.version(5).stores({
+      challenges: "id, tripId, [tripId+deletedAt], updatedAt, status, period, dayKey, participantId",
+      forfeits: "id, tripId, [tripId+deletedAt], updatedAt, status, participantId, challengeId",
+      tripPhotos: "id, tripId, [tripId+deletedAt], updatedAt, takenAt, uploadedBy",
+      photoUploads: "id, tripId, status, createdAt, kind, participantId, photoId",
     });
   }
 }

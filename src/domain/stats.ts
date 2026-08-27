@@ -1,5 +1,7 @@
 import type { Drink, DrinkEntry, Participant, Trip, WaterEntry } from "./types";
-import { deviceTimeZone, formatDateKey, getZonedParts, zonedDayKey } from "@/lib/timezone";
+import { deviceTimeZone, formatDateKey, getZonedParts } from "@/lib/timezone";
+import { getTripDayKey } from "@/lib/trip-day";
+import { calculateUnusualStats, type UnusualStats } from "./unusual-stats";
 
 export interface RankedValue {
   id: string;
@@ -53,6 +55,7 @@ export interface TripStats {
   days: DayStat[];
   trophies: Trophy[];
   personalBreakdown: Record<string, RankedValue[]>;
+  unusual: UnusualStats;
 }
 
 function percentage(value: number, total: number): number {
@@ -112,7 +115,7 @@ export function calculateStats(
   const drinkById = new Map(drinks.map((item) => [item.id, item]));
   const entries = allEntries.filter((entry) => !entry.deletedAt && participantById.has(entry.participantId) && drinkById.get(entry.drinkId)?.isAlcohol);
   const waters = allWater.filter((entry) => !entry.deletedAt && participantById.has(entry.participantId));
-  const dayKeys = new Set(entries.map((entry) => zonedDayKey(entry.consumedAt, timezone)));
+  const dayKeys = new Set(entries.map((entry) => getTripDayKey(entry.consumedAt, timezone)));
   const activeDays = dayKeys.size;
   const participantCounts: Record<string, number> = {};
   const drinkCounts: Record<string, number> = {};
@@ -124,7 +127,7 @@ export function calculateStats(
   const dayWaterCounts: Record<string, number> = {};
 
   for (const entry of entries) {
-    const day = zonedDayKey(entry.consumedAt, timezone);
+    const day = getTripDayKey(entry.consumedAt, timezone);
     const hour = getZonedParts(entry.consumedAt, timezone).hour;
     participantCounts[entry.participantId] = (participantCounts[entry.participantId] ?? 0) + 1;
     drinkCounts[entry.drinkId] = (drinkCounts[entry.drinkId] ?? 0) + 1;
@@ -137,7 +140,7 @@ export function calculateStats(
     dayHourCounts[day][hour] = (dayHourCounts[day][hour] ?? 0) + 1;
   }
   for (const entry of waters) {
-    const day = zonedDayKey(entry.consumedAt, timezone);
+    const day = getTripDayKey(entry.consumedAt, timezone);
     waterCounts[entry.participantId] = (waterCounts[entry.participantId] ?? 0) + 1;
     dayWaterCounts[day] = (dayWaterCounts[day] ?? 0) + 1;
   }
@@ -227,5 +230,6 @@ export function calculateStats(
     days: dayList,
     trophies,
     personalBreakdown,
+    unusual: calculateUnusualStats(participants, drinks, allEntries, allWater, timezone),
   };
 }

@@ -3,8 +3,8 @@
 -- ATTENTION : ce script supprime définitivement tous les séjours et toutes
 -- leurs données dans le projet Supabase courant. Il conserve le schéma,
 -- les migrations, les policies RLS et les utilisateurs Supabase Auth.
--- Les fichiers du bucket Storage `profile-photos` ne sont pas supprimés par
--- cette requête : utilisez Storage > profile-photos pour les effacer aussi.
+-- Les fichiers des buckets Storage `profile-photos` et `trip-photos` ne sont pas
+-- supprimés par cette requête : utilisez Storage pour les effacer aussi.
 --
 -- À exécuter volontairement dans Supabase > SQL Editor.
 
@@ -12,6 +12,9 @@ begin;
 
 truncate table
   public.sync_operations,
+  public.trip_photos,
+  public.forfeits,
+  public.challenges,
   public.water_entries,
   public.drink_entries,
   public.drinks,

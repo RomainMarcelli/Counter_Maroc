@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Clock3, Download, Droplets, Flame, Moon, Share2, Shapes, Trophy } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, CalendarDays, Clock3, Download, Droplets, Flame, Moon, Share2, Shapes, Target, Trophy } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useBac } from "@/components/providers/bac-provider";
 import { useToast } from "@/components/providers/toast-provider";
@@ -10,8 +11,10 @@ import { ParticipantAvatar } from "@/components/participants/participant-avatar"
 import { DrinkIcon, DrinkIconGlyph } from "@/components/drinks/drink-icon";
 import { HallPodium } from "./hall-podium";
 import { TrophyBadge } from "./trophy-badge";
+import { UnusualRecords } from "./unusual-records";
 import { calculateStats } from "@/domain/stats";
-import { formatDateKey, getZonedParts, zonedDayKey } from "@/lib/timezone";
+import { formatDateKey, getZonedParts } from "@/lib/timezone";
+import { getTripDayKey } from "@/lib/trip-day";
 import { BAC_SHORT_DISCLAIMER, formatBac, formatTripTime } from "@/domain/bac";
 
 export function HallOfFame() {
@@ -30,7 +33,7 @@ export function HallOfFame() {
       const byDay = new Map<string, number>();
       const byHour = new Map<number, number>();
       for (const entry of mine) {
-        const day = zonedDayKey(entry.consumedAt);
+        const day = getTripDayKey(entry.consumedAt);
         byDay.set(day, (byDay.get(day) ?? 0) + 1);
         const hour = getZonedParts(entry.consumedAt).hour;
         byHour.set(hour, (byHour.get(hour) ?? 0) + 1);
@@ -46,13 +49,13 @@ export function HallOfFame() {
     if (!trip || !stats) return null;
     const lastDay = [...stats.days].reverse().find((day) => day.total > 0);
     if (!lastDay) return null;
-    const isSameDay = <T extends { consumedAt: string }>(entry: T) => zonedDayKey(entry.consumedAt) === lastDay.date;
+    const isSameDay = <T extends { consumedAt: string }>(entry: T) => getTripDayKey(entry.consumedAt) === lastDay.date;
     return { date: lastDay.date, stats: calculateStats(trip, participants, drinks, drinkEntries.filter(isSameDay), waterEntries.filter(isSameDay)) };
   }, [trip, stats, participants, drinks, drinkEntries, waterEntries]);
 
   if (!trip || !stats) return null;
   if (stats.totalAlcohol < 3) {
-    return <><Header /><EmptyState icon={<Trophy size={34} />} title="Le Hall of Fame se prépare" detail="Ajoutez au moins trois verres pour débloquer le podium et les premiers trophées." /></>;
+    return <><Header /><HallLinks /><EmptyState icon={<Trophy size={34} />} title="Le Hall of Fame se prépare" detail="Ajoutez au moins trois verres pour débloquer le podium et les premiers trophées." /></>;
   }
 
   const podium = stats.participants.filter((item) => item.total > 0).slice(0, 3);
@@ -83,6 +86,8 @@ export function HallOfFame() {
   return (
     <div className="space-y-8">
       <Header />
+
+      <HallLinks />
 
       <section className="hall-hero zellige-card rounded-[36px] bg-morocco px-4 pb-5 pt-7 text-ivory shadow-card sm:px-6">
         <div className="relative z-10 text-center">
@@ -177,6 +182,8 @@ export function HallOfFame() {
         </div>
       </section>
 
+      <UnusualRecords stats={stats} trip={trip} />
+
       <button onClick={() => void share()} className="tap-bump flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl bg-terra font-black text-ivory shadow-card"><Share2 size={20} />Partager le palmarès <Download size={17} className="opacity-65" /></button>
     </div>
   );
@@ -184,6 +191,10 @@ export function HallOfFame() {
 
 function Header() {
   return <header><p className="text-[10px] font-black uppercase tracking-[0.2em] text-terra">Le bilan qui reste</p><h1 className="font-display text-4xl font-bold">Hall of Fame</h1><p className="mt-2 text-sm font-bold text-morocco/50">Le palmarès final du séjour, calculé depuis le Journal.</p></header>;
+}
+
+function HallLinks() {
+  return <div className="my-5 grid grid-cols-2 gap-3"><Link href="/challenges" className="tap-bump flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-terra font-black text-ivory shadow-sm"><Target size={19} />Challenges</Link><Link href="/recaps" className="tap-bump flex min-h-14 items-center justify-center gap-2 rounded-2xl border-2 border-morocco font-black text-morocco"><CalendarDays size={19} />Récaps</Link></div>;
 }
 
 function HeroMetric({ value, label }: { value: number; label: string }) {

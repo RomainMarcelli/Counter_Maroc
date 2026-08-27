@@ -35,7 +35,7 @@ const entry = (participantId: string, hour: number): DrinkEntry => ({
 function setTrip(overrides: Partial<TripValue> = {}): void {
   mocks.trip.current = {
     ready: true, trip, participants: [romain, lucas], activeParticipants: [romain, lucas], drinks: [whisky], activeDrinks: [whisky],
-    drinkEntries: [entry("romain", 20), entry("romain", 21)], waterEntries: [], queue: [], actorId: "romain", authorId: "compte-romain",
+    drinkEntries: [entry("romain", 20), entry("romain", 21)], waterEntries: [], challenges: [], forfeits: [], tripPhotos: [], queue: [], actorId: "romain", authorId: "compte-romain",
     selectedParticipantIds: ["romain"], setSelectedParticipantIds: vi.fn(), refreshActiveTrip: vi.fn(),
     ...overrides,
   };

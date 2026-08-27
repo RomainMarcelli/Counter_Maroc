@@ -60,6 +60,7 @@ function setTrip(overrides: Partial<TripValue> = {}): void {
     activeDrinks: drinks,
     drinkEntries,
     waterEntries: [water],
+    challenges: [], forfeits: [], tripPhotos: [],
     queue: [],
     actorId: "romain", authorId: "compte-romain",
     selectedParticipantIds: ["romain"],

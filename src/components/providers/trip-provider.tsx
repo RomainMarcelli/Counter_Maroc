@@ -6,7 +6,7 @@ import { db } from "@/data/database";
 import { bootstrapDemoIfEnabled, getActiveTripId } from "@/data/repository";
 import { syncEngine } from "@/data/sync-engine";
 import { useAuth } from "./auth-provider";
-import type { Drink, DrinkEntry, Participant, SyncOperation, Trip, WaterEntry } from "@/domain/types";
+import type { Challenge, Drink, DrinkEntry, Forfeit, Participant, SyncOperation, Trip, TripPhoto, WaterEntry } from "@/domain/types";
 
 interface TripContextValue {
   ready: boolean;
@@ -17,6 +17,9 @@ interface TripContextValue {
   activeDrinks: Drink[];
   drinkEntries: DrinkEntry[];
   waterEntries: WaterEntry[];
+  challenges: Challenge[];
+  forfeits: Forfeit[];
+  tripPhotos: TripPhoto[];
   queue: SyncOperation[];
   /** Identifiant du participant que le compte connecté incarne dans ce séjour. */
   actorId: string | null;
@@ -39,6 +42,9 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const drinks = useLiveQuery(() => (activeTripId ? db.drinks.where("tripId").equals(activeTripId).sortBy("sortOrder") : []), [activeTripId], []);
   const drinkEntries = useLiveQuery(() => (activeTripId ? db.drinkEntries.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
   const waterEntries = useLiveQuery(() => (activeTripId ? db.waterEntries.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
+  const challenges = useLiveQuery(() => (activeTripId ? db.challenges.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
+  const forfeits = useLiveQuery(() => (activeTripId ? db.forfeits.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
+  const tripPhotos = useLiveQuery(() => (activeTripId ? db.tripPhotos.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
   const queue = useLiveQuery(() => (activeTripId ? db.syncQueue.where("tripId").equals(activeTripId).toArray() : []), [activeTripId], []);
   const authorId = useLiveQuery(() => db.settings.get("authUserId").then((setting) => setting?.value ?? null), [], null);
 
@@ -90,13 +96,16 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     activeDrinks,
     drinkEntries,
     waterEntries,
+    challenges,
+    forfeits,
+    tripPhotos,
     queue,
     actorId,
     authorId,
     selectedParticipantIds,
     setSelectedParticipantIds,
     refreshActiveTrip,
-  }), [ready, trip, participants, activeParticipants, drinks, activeDrinks, drinkEntries, waterEntries, queue, actorId, authorId, selectedParticipantIds]);
+  }), [ready, trip, participants, activeParticipants, drinks, activeDrinks, drinkEntries, waterEntries, challenges, forfeits, tripPhotos, queue, actorId, authorId, selectedParticipantIds]);
 
   return <TripContext.Provider value={value}>{children}</TripContext.Provider>;
 }

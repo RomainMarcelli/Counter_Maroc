@@ -6,7 +6,8 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { SelectField } from "@/components/ui/select-sheet";
 import { calculateStats, type DayStat } from "@/domain/stats";
 import type { Drink, DrinkEntry, Participant, Trip, WaterEntry } from "@/domain/types";
-import { formatDateKey, zonedDayKey } from "@/lib/timezone";
+import { formatDateKey } from "@/lib/timezone";
+import { getTripDayKey } from "@/lib/trip-day";
 
 type PeriodFilter = "all" | `week:${number}` | `day:${string}`;
 
@@ -26,7 +27,7 @@ export function TemporalAnalysis({ trip, participants, drinks, drinkEntries, wat
   const personStats = useMemo(() => calculateStats(trip, participants, drinks, personEntries, personWater), [trip, participants, drinks, personEntries, personWater]);
   const filterPeriod = <T extends { consumedAt: string }>(entries: T[]) => entries.filter((entry) => {
     if (period === "all") return true;
-    const dayKey = zonedDayKey(entry.consumedAt);
+    const dayKey = getTripDayKey(entry.consumedAt);
     if (period.startsWith("day:")) return dayKey === period.slice(4);
     const weekIndex = Number(period.slice(5));
     return Math.floor((Date.parse(dayKey) - Date.parse(trip.startDate)) / (7 * 86_400_000)) === weekIndex;

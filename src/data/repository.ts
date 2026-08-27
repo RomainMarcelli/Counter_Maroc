@@ -3,7 +3,7 @@ import { queueOperation } from "./queue";
 import { demoSnapshot } from "./seed";
 import { CATEGORY_DEFAULTS, SYSTEM_DRINKS, TRIP_TIMEZONE } from "@/domain/constants";
 import { deviceTimeZone } from "@/lib/timezone";
-import type { AlcoholComponent, Drink, DrinkCategory, DrinkEntry, EntityBase, EntityType, Participant, Trip, UndoBatch, WaterEntry } from "@/domain/types";
+import type { AlcoholComponent, Challenge, ChallengePeriod, ChallengeScope, ChallengeTarget, Drink, DrinkCategory, DrinkEntry, EntityBase, EntityType, Forfeit, Participant, Trip, TripPhoto, UndoBatch, WaterEntry } from "@/domain/types";
 import { calculateDrinkAlcoholGrams } from "@/domain/bac";
 import { createId, createShareCode } from "@/lib/id";
 
@@ -23,7 +23,14 @@ function signalLocalChange(): void {
 }
 
 async function putWithQueue<T extends EntityBase>(entityType: EntityType, entity: T): Promise<void> {
-  const table = entityType === "trip" ? db.trips : entityType === "participant" ? db.participants : entityType === "drink" ? db.drinks : entityType === "drinkEntry" ? db.drinkEntries : db.waterEntries;
+  const table = entityType === "trip" ? db.trips
+    : entityType === "participant" ? db.participants
+      : entityType === "drink" ? db.drinks
+        : entityType === "drinkEntry" ? db.drinkEntries
+          : entityType === "waterEntry" ? db.waterEntries
+            : entityType === "challenge" ? db.challenges
+              : entityType === "forfeit" ? db.forfeits
+                : db.tripPhotos;
   await db.transaction("rw", table, db.syncQueue, async () => {
     await table.put(entity as never);
     await db.syncQueue.put(queueOperation(entityType, entity));
@@ -69,8 +76,8 @@ export async function claimLocalData(userId: string): Promise<boolean> {
   const previous = (await db.settings.get(LOCAL_OWNER_KEY))?.value ?? null;
   if (previous === userId) return false;
   if (previous) {
-    await db.transaction("rw", [db.trips, db.participants, db.drinks, db.drinkEntries, db.waterEntries, db.syncQueue], async () => {
-      await Promise.all([db.trips.clear(), db.participants.clear(), db.drinks.clear(), db.drinkEntries.clear(), db.waterEntries.clear(), db.syncQueue.clear()]);
+    await db.transaction("rw", [db.trips, db.participants, db.drinks, db.drinkEntries, db.waterEntries, db.challenges, db.forfeits, db.tripPhotos, db.photoUploads, db.syncQueue], async () => {
+      await Promise.all([db.trips.clear(), db.participants.clear(), db.drinks.clear(), db.drinkEntries.clear(), db.waterEntries.clear(), db.challenges.clear(), db.forfeits.clear(), db.tripPhotos.clear(), db.photoUploads.clear(), db.syncQueue.clear()]);
     });
     await db.settings.delete(ACTIVE_TRIP_KEY);
   }
@@ -386,6 +393,75 @@ export async function updateWaterEntry(entry: WaterEntry, changes: Pick<WaterEnt
 export async function deleteWaterEntry(entry: WaterEntry): Promise<void> {
   const timestamp = nowIso();
   await putWithQueue("waterEntry", { ...entry, updatedAt: timestamp, deletedAt: timestamp });
+}
+
+export interface ChallengeInput {
+  title: string;
+  description: string;
+  scope: ChallengeScope;
+  period: ChallengePeriod;
+  dayKey: string | null;
+  targetType: ChallengeTarget;
+  targetValue: number;
+  participantId: string | null;
+  reward: string | null;
+}
+
+export async function addChallenge(tripId: string, input: ChallengeInput): Promise<Challenge> {
+  const timestamp = nowIso();
+  const challenge: Challenge = {
+    id: createId(), tripId, ...input, title: input.title.trim(), description: input.description.trim(),
+    reward: input.reward?.trim() || null, targetValue: Math.max(1, Math.round(input.targetValue)),
+    status: "active", completedAt: null, createdBy: await getAuthorId(),
+    createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+  };
+  await putWithQueue("challenge", challenge);
+  return challenge;
+}
+
+/** Répéter une validation aboutit au même état et ne crée aucune ligne supplémentaire. */
+export async function setChallengeStatus(challenge: Challenge, status: Challenge["status"]): Promise<void> {
+  if (challenge.status === status) return;
+  const timestamp = nowIso();
+  await putWithQueue("challenge", { ...challenge, status, completedAt: status === "completed" ? timestamp : null, updatedAt: timestamp });
+}
+
+export async function deleteChallenge(challenge: Challenge): Promise<void> {
+  const timestamp = nowIso();
+  await putWithQueue("challenge", { ...challenge, deletedAt: timestamp, updatedAt: timestamp });
+}
+
+export async function addForfeit(tripId: string, input: Pick<Forfeit, "title" | "description" | "participantId" | "challengeId">): Promise<Forfeit> {
+  const timestamp = nowIso();
+  const forfeit: Forfeit = {
+    id: createId(), tripId, ...input, title: input.title.trim(), description: input.description.trim(),
+    status: "pending", completedAt: null, createdBy: await getAuthorId(), createdAt: timestamp, updatedAt: timestamp, deletedAt: null,
+  };
+  await putWithQueue("forfeit", forfeit);
+  return forfeit;
+}
+
+export async function completeForfeit(forfeit: Forfeit): Promise<void> {
+  if (forfeit.status === "completed") return;
+  const timestamp = nowIso();
+  await putWithQueue("forfeit", { ...forfeit, status: "completed", completedAt: timestamp, updatedAt: timestamp });
+}
+
+export async function deleteForfeit(forfeit: Forfeit): Promise<void> {
+  const timestamp = nowIso();
+  await putWithQueue("forfeit", { ...forfeit, deletedAt: timestamp, updatedAt: timestamp });
+}
+
+export async function addTripPhotoFromUpload(input: { id: string; tripId: string; storagePath: string; takenAt: string; uploadedBy: string; createdAt: string }): Promise<TripPhoto> {
+  const photo: TripPhoto = { ...input, caption: null, updatedAt: nowIso(), deletedAt: null };
+  await putWithQueue("tripPhoto", photo);
+  return photo;
+}
+
+export async function deleteTripPhoto(photo: TripPhoto): Promise<void> {
+  if (photo.deletedAt) return;
+  const timestamp = nowIso();
+  await putWithQueue("tripPhoto", { ...photo, deletedAt: timestamp, updatedAt: timestamp });
 }
 
 async function setEntriesDeleted(batch: UndoBatch, deleted: boolean): Promise<void> {

@@ -14,6 +14,7 @@ import { JoinInvite } from "@/components/onboarding/join-invite";
 import { usePendingInvite } from "@/components/onboarding/invite-capture";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { BrandLoader } from "@/components/brand/brand-loader";
+import { DailyRecapPrompt } from "@/components/recaps/daily-recap-prompt";
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
   const { ready, trip, actorId, activeParticipants } = useTrip();
@@ -42,6 +43,7 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
       <main className="app-container">{children}</main>
       <BottomNav />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <DailyRecapPrompt />
     </>
   );
 }

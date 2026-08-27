@@ -12,7 +12,8 @@ import { EntryEditor, type JournalSelection } from "./entry-editor";
 import { BulkEditSheet } from "./bulk-edit-sheet";
 import { SwipeRow } from "./swipe-row";
 import { deleteEntries, restoreEntries } from "@/data/repository";
-import { formatDateKey, formatTripDateTime, zonedDayKey } from "@/lib/timezone";
+import { formatDateKey, formatTripDateTime } from "@/lib/timezone";
+import { getTripDayKey } from "@/lib/trip-day";
 import type { UndoBatch } from "@/domain/types";
 
 type RowKind = "drink" | "water";
@@ -40,7 +41,7 @@ export function JournalList() {
       ...drinkEntries.filter((entry) => !entry.deletedAt).map((entry) => ({ kind: "drink" as const, entry, consumedAt: entry.consumedAt })),
       ...waterEntries.filter((entry) => !entry.deletedAt).map((entry) => ({ kind: "water" as const, entry, consumedAt: entry.consumedAt })),
     ]
-      .filter((row) => day === "all" || zonedDayKey(row.consumedAt) === day)
+      .filter((row) => day === "all" || getTripDayKey(row.consumedAt) === day)
       .filter((row) => person === "all" || row.entry.participantId === person)
       .sort((a, b) => b.consumedAt.localeCompare(a.consumedAt));
   }, [trip, drinkEntries, waterEntries, day, person]);
@@ -54,7 +55,7 @@ export function JournalList() {
   }, [visibleKey]);
 
   if (!trip) return null;
-  const days = [...new Set([...drinkEntries, ...waterEntries].filter((entry) => !entry.deletedAt).map((entry) => zonedDayKey(entry.consumedAt)))].sort().reverse();
+  const days = [...new Set([...drinkEntries, ...waterEntries].filter((entry) => !entry.deletedAt).map((entry) => getTripDayKey(entry.consumedAt)))].sort().reverse();
   const pickedSet = new Set(picked);
   const allPicked = rows.length > 0 && picked.length === rows.length;
 

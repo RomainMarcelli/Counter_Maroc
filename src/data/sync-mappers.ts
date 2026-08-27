@@ -1,4 +1,4 @@
-import type { AlcoholComponent, Drink, DrinkEntry, EntityType, Participant, Trip, WaterEntry } from "@/domain/types";
+import type { AlcoholComponent, Challenge, Drink, DrinkEntry, EntityType, Forfeit, Participant, Trip, TripPhoto, WaterEntry } from "@/domain/types";
 
 type RemoteRow = Record<string, unknown>;
 
@@ -8,9 +8,12 @@ export const TABLE_BY_ENTITY: Record<EntityType, string> = {
   drink: "drinks",
   drinkEntry: "drink_entries",
   waterEntry: "water_entries",
+  challenge: "challenges",
+  forfeit: "forfeits",
+  tripPhoto: "trip_photos",
 };
 
-function base(entity: Trip | Participant | Drink | DrinkEntry | WaterEntry) {
+function base(entity: Trip | Participant | Drink | DrinkEntry | WaterEntry | Challenge | Forfeit | TripPhoto) {
   return { id: entity.id, created_at: entity.createdAt, updated_at: entity.updatedAt, deleted_at: entity.deletedAt };
 }
 
@@ -23,7 +26,7 @@ function base(entity: Trip | Participant | Drink | DrinkEntry | WaterEntry) {
  * `created_by` et `action_by` portent l’auteur d’origine, jamais celui qui pousse :
  * corriger la ligne de quelqu’un ne réécrit pas sa signature.
  */
-export function toRemote(entityType: EntityType, value: Trip | Participant | Drink | DrinkEntry | WaterEntry): RemoteRow {
+export function toRemote(entityType: EntityType, value: Trip | Participant | Drink | DrinkEntry | WaterEntry | Challenge | Forfeit | TripPhoto): RemoteRow {
   if (entityType === "trip") {
     const entity = value as Trip;
     // `created_by` est obligatoire même sur un upsert d’une ligne existante :
@@ -32,7 +35,7 @@ export function toRemote(entityType: EntityType, value: Trip | Participant | Dri
     // donc `created_by = auth.uid()` était faux et l’upsert repartait en 42501.
     return { ...base(entity), name: entity.name, share_code: entity.shareCode, start_date: entity.startDate, end_date: entity.endDate, timezone: entity.timezone, created_by: entity.createdBy };
   }
-  const entity = value as Participant | Drink | DrinkEntry | WaterEntry;
+  const entity = value as Participant | Drink | DrinkEntry | WaterEntry | Challenge | Forfeit | TripPhoto;
   if (entityType === "participant") {
     const participant = entity as Participant;
     return {
@@ -52,6 +55,30 @@ export function toRemote(entityType: EntityType, value: Trip | Participant | Dri
     return {
       ...base(entry), trip_id: entry.tripId, participant_id: entry.participantId, drink_id: entry.drinkId, consumed_at: entry.consumedAt, action_by: entry.actionBy, device_id: entry.deviceId, round_id: entry.roundId,
       alcohol_grams: entry.alcoholGrams, drink_name_snapshot: entry.drinkNameSnapshot, paid_by: entry.paidBy, price_cents_snapshot: entry.priceCentsSnapshot,
+    };
+  }
+  if (entityType === "challenge") {
+    const challenge = entity as Challenge;
+    return {
+      ...base(challenge), trip_id: challenge.tripId, title: challenge.title, description: challenge.description,
+      scope: challenge.scope, period: challenge.period, day_key: challenge.dayKey, target_type: challenge.targetType,
+      target_value: challenge.targetValue, participant_id: challenge.participantId, reward: challenge.reward,
+      status: challenge.status, completed_at: challenge.completedAt, created_by: challenge.createdBy,
+    };
+  }
+  if (entityType === "forfeit") {
+    const forfeit = entity as Forfeit;
+    return {
+      ...base(forfeit), trip_id: forfeit.tripId, title: forfeit.title, description: forfeit.description,
+      participant_id: forfeit.participantId, challenge_id: forfeit.challengeId, status: forfeit.status,
+      completed_at: forfeit.completedAt, created_by: forfeit.createdBy,
+    };
+  }
+  if (entityType === "tripPhoto") {
+    const photo = entity as TripPhoto;
+    return {
+      ...base(photo), trip_id: photo.tripId, storage_path: photo.storagePath, taken_at: photo.takenAt,
+      uploaded_by: photo.uploadedBy, caption: photo.caption,
     };
   }
   const entry = entity as WaterEntry;
@@ -79,7 +106,7 @@ function safeParse(value: string): unknown {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-export function fromRemote(entityType: EntityType, row: RemoteRow): Trip | Participant | Drink | DrinkEntry | WaterEntry {
+export function fromRemote(entityType: EntityType, row: RemoteRow): Trip | Participant | Drink | DrinkEntry | WaterEntry | Challenge | Forfeit | TripPhoto {
   const common = { id: text(row, "id"), createdAt: text(row, "created_at"), updatedAt: text(row, "updated_at"), deletedAt: nullable(row, "deleted_at") };
   if (entityType === "trip") {
     return { ...common, tripId: common.id, name: text(row, "name"), shareCode: text(row, "share_code"), startDate: text(row, "start_date"), endDate: text(row, "end_date"), timezone: text(row, "timezone"), createdBy: text(row, "created_by") };
@@ -102,6 +129,30 @@ export function fromRemote(entityType: EntityType, row: RemoteRow): Trip | Parti
     return {
       ...common, tripId, participantId: text(row, "participant_id"), drinkId: text(row, "drink_id"), consumedAt: text(row, "consumed_at"), actionBy: text(row, "action_by"), deviceId: text(row, "device_id"), roundId: nullable(row, "round_id"),
       alcoholGrams: numberOrNull(row, "alcohol_grams"), drinkNameSnapshot: nullable(row, "drink_name_snapshot"), paidBy: nullable(row, "paid_by"), priceCentsSnapshot: numberOrNull(row, "price_cents_snapshot"),
+    };
+  }
+  if (entityType === "challenge") {
+    return {
+      ...common, tripId, title: text(row, "title"), description: text(row, "description"),
+      scope: text(row, "scope") as Challenge["scope"], period: text(row, "period") as Challenge["period"],
+      dayKey: nullable(row, "day_key"), targetType: text(row, "target_type") as Challenge["targetType"],
+      targetValue: Number(row.target_value ?? 1), participantId: nullable(row, "participant_id"),
+      reward: nullable(row, "reward"), status: text(row, "status") as Challenge["status"],
+      completedAt: nullable(row, "completed_at"), createdBy: text(row, "created_by"),
+    };
+  }
+  if (entityType === "forfeit") {
+    return {
+      ...common, tripId, title: text(row, "title"), description: text(row, "description"),
+      participantId: nullable(row, "participant_id"), challengeId: nullable(row, "challenge_id"),
+      status: text(row, "status") as Forfeit["status"], completedAt: nullable(row, "completed_at"),
+      createdBy: text(row, "created_by"),
+    };
+  }
+  if (entityType === "tripPhoto") {
+    return {
+      ...common, tripId, storagePath: text(row, "storage_path"), takenAt: text(row, "taken_at"),
+      uploadedBy: text(row, "uploaded_by"), caption: nullable(row, "caption"),
     };
   }
   return { ...common, tripId, participantId: text(row, "participant_id"), consumedAt: text(row, "consumed_at"), actionBy: text(row, "action_by"), deviceId: text(row, "device_id"), roundId: nullable(row, "round_id") };
