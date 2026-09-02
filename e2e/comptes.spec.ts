@@ -135,9 +135,9 @@ test("deux comptes partagent le même séjour et saisissent l’un pour l’autr
 
   // --- Romain sert un Mojito à Lucas ---------------------------------------
   await romain.reload();
-  await expect(romain.getByRole("button", { name: /Lucas/ })).toBeVisible({ timeout: 30_000 });
-  await romain.getByRole("button", { name: /Lucas/ }).click();
-  await romain.getByRole("button", { name: /^Romain/ }).click(); // ne garder que Lucas
+  await expect(romain.getByRole("button", { name: "Lucas", exact: true })).toBeVisible({ timeout: 30_000 });
+  await romain.getByRole("button", { name: "Lucas", exact: true }).click();
+  await romain.getByRole("button", { name: "Romain", exact: true }).click(); // ne garder que Lucas
   await romain.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
   await expect(romain.getByText("Mojito ajouté à Lucas")).toBeVisible();
 
@@ -148,8 +148,8 @@ test("deux comptes partagent le même séjour et saisissent l’un pour l’autr
 
   // --- Lucas sert un Whisky à Romain ---------------------------------------
   await lucas.getByRole("link", { name: "Rapide" }).click();
-  await lucas.getByRole("button", { name: /^Romain/ }).click();
-  await lucas.getByRole("button", { name: /Lucas/ }).click(); // ne garder que Romain
+  await lucas.getByRole("button", { name: "Romain", exact: true }).click();
+  await lucas.getByRole("button", { name: "Lucas", exact: true }).click(); // ne garder que Romain
   await lucas.getByRole("button", { name: "Ajouter un Whisky aux participants sélectionnés" }).click();
   await expect(lucas.getByText("Whisky ajouté à Romain")).toBeVisible();
 

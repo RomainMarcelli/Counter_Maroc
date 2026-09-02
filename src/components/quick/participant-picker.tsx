@@ -35,6 +35,9 @@ export function ParticipantPicker() {
             <button
               key={participant.id}
               onClick={() => toggle(participant.id)}
+              // L’avatar porte son propre libellé : sans ce nom explicite, la carte
+              // s’annoncerait « Photo de Romain Romain » au lieu du simple prénom.
+              aria-label={participant.name}
               aria-pressed={selected}
               className={clsx(
                 "tap-bump relative flex min-h-[84px] flex-col items-center justify-center gap-2 rounded-[22px] border-2 px-2 text-center text-sm font-extrabold transition",
