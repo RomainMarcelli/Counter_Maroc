@@ -37,12 +37,46 @@ async function signUp(page: Page, displayName: string, email: string) {
   await expect(page.getByRole("heading", { name: new RegExp(`Bienvenue\\s+${displayName}`) })).toBeVisible({ timeout: 40_000 });
 }
 
+async function submitJoinAndExpectIdentity(page: Page) {
+  const responsePromise = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes("/rest/v1/rpc/join_trip_by_code"),
+    { timeout: 60_000 },
+  );
+  await page.getByRole("button", { name: "Rejoindre le Crew" }).click();
+
+  let response;
+  try {
+    response = await responsePromise;
+  } catch (cause) {
+    throw new Error("Le RPC join_trip_by_code n’a renvoyé aucune réponse en 60 secondes.", { cause });
+  }
+  const responseBody = await response.text().catch(() => "<corps illisible>");
+  expect(response.ok(), `join_trip_by_code → HTTP ${response.status()} · ${responseBody}`).toBe(true);
+
+  const identity = page.getByRole("heading", { name: "Quel participant êtes-vous ?" });
+  const joinError = page.getByRole("status").filter({ hasText: "Séjour introuvable" });
+  const waitForever = () => new Promise<never>(() => undefined);
+  const outcome = await Promise.race([
+    identity.waitFor({ state: "visible", timeout: 40_000 }).then(() => ({ kind: "identity" as const })).catch(waitForever),
+    joinError.waitFor({ state: "visible", timeout: 40_000 })
+      .then(async () => ({ kind: "error" as const, message: await joinError.innerText() }))
+      .catch(waitForever),
+    page.waitForTimeout(41_000).then(() => ({ kind: "timeout" as const })),
+  ]);
+
+  const detail = outcome.kind === "error"
+    ? `Message affiché : ${outcome.message}`
+    : outcome.kind === "timeout"
+      ? `RPC réussi mais écran inchangé après 41 s · URL ${page.url()}`
+      : "Écran de choix du participant affiché";
+  expect(outcome.kind, `join_trip_by_code → HTTP ${response.status()} · ${detail}`).toBe("identity");
+}
+
 async function joinTrip(page: Page, displayName: string, email: string, shareCode: string) {
   await signUp(page, displayName, email);
   await page.getByRole("button", { name: "Rejoindre un séjour" }).click();
   await page.getByLabel("Code de partage").fill(shareCode);
-  await page.getByRole("button", { name: "Rejoindre le Crew" }).click();
-  await expect(page.getByRole("heading", { name: "Quel participant êtes-vous ?" })).toBeVisible({ timeout: 40_000 });
+  await submitJoinAndExpectIdentity(page);
   await page.getByLabel("Ou crée ton participant").fill(displayName);
   await page.getByRole("button", { name: "Créer mon participant" }).click();
   await expect(page.getByRole("heading", { name: "Pour qui ?" })).toBeVisible({ timeout: 40_000 });
@@ -66,6 +100,7 @@ test.afterAll(async () => {
 });
 
 test("deux comptes partagent le même séjour et saisissent l’un pour l’autre", async ({ browser }) => {
+  test.setTimeout(120_000);
   const romainContext = await browser.newContext();
   const lucasContext = await browser.newContext();
   const romain = await romainContext.newPage();
@@ -91,10 +126,9 @@ test("deux comptes partagent le même séjour et saisissent l’un pour l’autr
   await signUp(lucas, "Lucas", lucasEmail);
   await lucas.getByRole("button", { name: "Rejoindre un séjour" }).click();
   await lucas.getByLabel("Code de partage").fill(shareCode);
-  await lucas.getByRole("button", { name: "Rejoindre le Crew" }).click();
+  await submitJoinAndExpectIdentity(lucas);
 
   // Un compte et un participant sont deux choses distinctes : Lucas choisit la sienne.
-  await expect(lucas.getByRole("heading", { name: "Quel participant êtes-vous ?" })).toBeVisible({ timeout: 40_000 });
   await lucas.getByLabel("Ou crée ton participant").fill("Lucas");
   await lucas.getByRole("button", { name: "Créer mon participant" }).click();
   await expect(lucas.getByRole("heading", { name: "Pour qui ?" })).toBeVisible({ timeout: 40_000 });
