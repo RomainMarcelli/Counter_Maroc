@@ -32,7 +32,7 @@ async function signUp(page: Page, displayName: string, email: string) {
   await page.getByRole("tab", { name: "Créer un compte" }).click();
   await page.getByLabel("Prénom").fill(displayName);
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Mot de passe").fill(PASSWORD);
+  await page.getByLabel("Mot de passe", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Créer mon compte", exact: true }).click();
   await expect(page.getByRole("heading", { name: new RegExp(`Bienvenue\\s+${displayName}`) })).toBeVisible({ timeout: 40_000 });
 }

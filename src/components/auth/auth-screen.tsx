@@ -70,10 +70,11 @@ export function AuthScreen() {
 
         <Field label="Email" type="email" inputMode="email" autoComplete="email" placeholder="romain@email.fr" value={form.email} onChange={(email) => setForm({ ...form, email })} />
 
-        <label className="block text-xs font-extrabold uppercase tracking-wider">
-          Mot de passe
+        <div className="block text-xs font-extrabold uppercase tracking-wider">
+          <label htmlFor="auth-password">Mot de passe</label>
           <span className="relative mt-2 block">
             <input
+              id="auth-password"
               type={showPassword ? "text" : "password"}
               value={form.password}
               onChange={(event) => setForm({ ...form, password: event.target.value })}
@@ -86,7 +87,7 @@ export function AuthScreen() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </span>
-        </label>
+        </div>
 
         {error ? <p role="alert" className="rounded-2xl border border-terra/40 bg-terra/10 px-4 py-3 text-sm font-bold text-terra">{error}</p> : null}
 
