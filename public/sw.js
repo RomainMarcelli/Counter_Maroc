@@ -42,8 +42,13 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then((response) => {
-      const copy = response.clone();
-      void caches.open(CACHE).then((cache) => cache.put(url.pathname, copy));
+      // Une page d'erreur de l'hébergeur (502 le temps d'un déploiement, 404) ne
+      // doit jamais remplacer la coquille précachée : elle deviendrait la version
+      // servie hors ligne pour cette route jusqu'au prochain passage en ligne.
+      if (response.ok) {
+        const copy = response.clone();
+        void caches.open(CACHE).then((cache) => cache.put(url.pathname, copy));
+      }
       return response;
     }).catch(async () => (await caches.match(request)) || (await caches.match(url.pathname)) || (await caches.match("/"))));
     return;

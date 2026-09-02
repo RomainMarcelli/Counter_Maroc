@@ -35,6 +35,11 @@ async function localEntity(entityType: EntityType, id: string): Promise<EntityBa
 
 async function mergeRemote(entityType: EntityType, row: Record<string, unknown>): Promise<void> {
   const remote = fromRemote(entityType, row);
+  // Un évènement Realtime `DELETE` livre un `new` vide, et une ligne tronquée n’a
+  // pas de date d’arbitrage : dans les deux cas on écrirait une entrée fantôme
+  // (identifiant vide, `consumedAt` illisible) que le Journal, les statistiques et
+  // l’estimation d’alcoolémie compteraient ensuite pour de bon.
+  if (!remote.id || !remote.updatedAt) return;
   const local = await localEntity(entityType, remote.id);
   if (!isRemoteNewer(local?.updatedAt, remote.updatedAt)) return;
   const queued = await db.syncQueue.get(`${entityType}:${remote.id}`);
