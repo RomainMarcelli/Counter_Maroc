@@ -67,7 +67,8 @@ class SyncEngine {
   private userId: string | null = null;
   /** Faux en mode démonstration ou sans Supabase : rien ne doit partir sur le réseau. */
   private enabled = true;
-  private running = false;
+  /** Passe active : un appel explicite attend la synchronisation automatique au lieu de l'ignorer. */
+  private running: Promise<void> | null = null;
   private started = false;
   private channels: RealtimeChannel[] = [];
   private subscribedTripId: string | null = null;
@@ -163,9 +164,25 @@ class SyncEngine {
   };
 
   flush = async (options: { immediate?: boolean } = {}): Promise<void> => {
+    // `putWithQueue()` annonce le changement avant de rendre la main à l'appelant.
+    // Si cet événement a déjà démarré une passe, l'appel explicite doit l'attendre,
+    // puis refaire une passe : l'opération a pu être ajoutée après son instantané.
+    while (this.running) await this.running;
+
     const client = getSupabase();
-    if (!this.enabled || this.running || !client) return;
+    if (!this.enabled || !client) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
+    const run = this.flushOnce(client, options);
+    this.running = run;
+    try {
+      await run;
+    } finally {
+      if (this.running === run) this.running = null;
+    }
+  };
+
+  private async flushOnce(client: SupabaseClient, options: { immediate?: boolean }): Promise<void> {
 
     // La session peut avoir été restaurée après le démarrage : on la relit avant de pousser.
     this.userId ??= await currentUserId();
@@ -175,7 +192,6 @@ class SyncEngine {
       return;
     }
 
-    this.running = true;
     try {
       const timestamp = new Date().toISOString();
       const operations = (await db.syncQueue.toArray())
@@ -217,11 +233,10 @@ class SyncEngine {
     } catch (error) {
       await recordError(isAuthorizationError(error) ? "auth" : "network", authErrorMessage(error));
     } finally {
-      this.running = false;
       announce();
       await this.scheduleRetry();
     }
-  };
+  }
 
   /** Confirme (ou crée) le séjour côté serveur avant toute écriture de son contenu. */
   private async ensureTripReady(client: SupabaseClient, userId: string, tripId: string): Promise<void> {

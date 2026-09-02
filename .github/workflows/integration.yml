@@ -9,6 +9,11 @@ on:
         default: local
         type: choice
         options: [local, remote]
+      extended_accounts:
+        description: Lancer aussi le scénario manuel à quatre comptes
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: supabase-integration-${{ github.ref }}-${{ inputs.target }}
@@ -46,8 +51,13 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Tester l’app-shell hors ligne
         run: npx playwright test e2e/marrakech-crew.spec.ts --project="Mobile Chrome" --grep="toutes les pages principales"
-      - name: Tester les comptes réels
-        run: npx playwright test e2e/comptes.spec.ts --project=Comptes
+      - name: Tester le smoke test à deux comptes
+        run: npx playwright test e2e/comptes.spec.ts --project=Comptes --grep="deux comptes"
+        env:
+          SUPABASE_E2E: "1"
+      - name: Tester le scénario manuel à quatre comptes
+        if: inputs.extended_accounts
+        run: npx playwright test e2e/comptes.spec.ts --project=Comptes --grep="quatre comptes"
         env:
           SUPABASE_E2E: "1"
 
@@ -79,7 +89,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Tester l’app-shell hors ligne
         run: npx playwright test e2e/marrakech-crew.spec.ts --project="Mobile Chrome" --grep="toutes les pages principales"
-      - name: Tester les comptes réels
-        run: npx playwright test e2e/comptes.spec.ts --project=Comptes
+      - name: Tester le smoke test à deux comptes
+        run: npx playwright test e2e/comptes.spec.ts --project=Comptes --grep="deux comptes"
+        env:
+          SUPABASE_E2E: "1"
+      - name: Tester le scénario manuel à quatre comptes
+        if: inputs.extended_accounts
+        run: npx playwright test e2e/comptes.spec.ts --project=Comptes --grep="quatre comptes"
         env:
           SUPABASE_E2E: "1"

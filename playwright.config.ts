@@ -43,6 +43,7 @@ export default defineConfig({
       ? [{
           name: "Comptes",
           testMatch: /comptes\.spec\.ts/,
+          retries: 0,
           use: { ...devices["Pixel 7"], baseURL: "http://127.0.0.1:3101" },
         }]
       : []),
