@@ -22,5 +22,8 @@ export function retryDelayMs(attempts: number): number {
 }
 
 export function isRemoteNewer(localUpdatedAt: string | undefined, remoteUpdatedAt: string): boolean {
-  return !localUpdatedAt || Date.parse(remoteUpdatedAt) > Date.parse(localUpdatedAt);
+  // Une égalité est volontairement distante-gagnante : PostgreSQL applique une
+  // règle « première écriture gagnante » à timestamp égal. Accepter ensuite sa
+  // ligne autoritaire empêche deux téléphones de conserver chacun leur variante.
+  return !localUpdatedAt || Date.parse(remoteUpdatedAt) >= Date.parse(localUpdatedAt);
 }

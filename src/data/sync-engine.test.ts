@@ -7,6 +7,7 @@ const upsert = vi.fn();
 const maybeSingle = vi.fn();
 /** Ligne de `trips` relue après le RPC, pour le code de partage réellement retenu. */
 const tripRow = vi.fn();
+const pulledRows = new Map<string, Array<Record<string, unknown>>>();
 const from = vi.fn((table: string) => {
   const single = table === "trips" ? tripRow : maybeSingle;
   const chain: { eq: () => typeof chain; maybeSingle: () => unknown } = {
@@ -14,7 +15,9 @@ const from = vi.fn((table: string) => {
     maybeSingle: () => single(),
   };
   return {
-    select: () => chain,
+    select: (columns?: string) => columns === "*"
+      ? { eq: async () => ({ data: pulledRows.get(table) ?? [], error: null }) }
+      : chain,
     upsert: (payload: unknown, options: unknown) => upsert(table, payload, options),
   };
 });
@@ -34,7 +37,9 @@ vi.mock("./auth", async () => {
 
 const { db } = await import("./database");
 const { syncEngine } = await import("./sync-engine");
-const { addDrinkRound, createTrip, setAuthUserId } = await import("./repository");
+const { addChallenge, addDrinkRound, addWaterRound, createTrip, deleteDrinkEntry, setAuthUserId, updateDrinkEntry } = await import("./repository");
+const { queueOperation } = await import("./queue");
+const { toRemote } = await import("./sync-mappers");
 
 const USER = "11111111-1111-4111-8111-111111111111";
 
@@ -50,6 +55,7 @@ const pushedTables = () => upsert.mock.calls.map((call) => call[0] as string);
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  pulledRows.clear();
   configured = true;
   vi.stubGlobal("navigator", { onLine: true });
   currentUserId.mockResolvedValue(USER);
@@ -63,7 +69,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.unstubAllGlobals();
-  await Promise.all([db.trips, db.participants, db.drinks, db.drinkEntries, db.waterEntries, db.syncQueue, db.settings].map((table) => table.clear()));
+  await Promise.all([db.trips, db.participants, db.drinks, db.drinkEntries, db.waterEntries, db.challenges, db.forfeits, db.tripPhotos, db.photoUploads, db.syncQueue, db.settings].map((table) => table.clear()));
 });
 
 describe("aucune écriture sans session", () => {
@@ -192,5 +198,92 @@ describe("hors ligne", () => {
 
     expect(upsert).not.toHaveBeenCalled();
     expect(await db.syncQueue.count()).toBe(queued);
+  });
+
+  it("rejoue un scénario chaos complet une seule fois au retour réseau", async () => {
+    await setAuthUserId(USER);
+    vi.stubGlobal("navigator", { onLine: false });
+    const tripId = await createTrip({ name: "Chaos", creatorName: "Romain", startDate: "2026-09-07", endDate: "2026-09-16" });
+    const participant = await db.participants.where("tripId").equals(tripId).first();
+    const beer = await db.drinks.where("tripId").equals(tripId).filter((drink) => drink.category === "beer").first();
+    const whisky = await db.drinks.where("tripId").equals(tripId).filter((drink) => drink.name === "Whisky").first();
+    for (let index = 0; index < 10; index += 1) await addDrinkRound(tripId, [participant!.id], beer!.id, new Date(Date.UTC(2026, 8, 7, 20, index)).toISOString());
+    const entries = await db.drinkEntries.where("tripId").equals(tripId).sortBy("consumedAt");
+    await updateDrinkEntry(entries[0], { drinkId: whisky!.id });
+    await updateDrinkEntry(entries[1], { drinkId: whisky!.id });
+    await deleteDrinkEntry(entries[2]);
+    for (let index = 0; index < 3; index += 1) await addWaterRound(tripId, [participant!.id]);
+    await addChallenge(tripId, { title: "Chaos collectif", description: "Rester cohérents", scope: "group", period: "trip", dayKey: null, targetType: "manual", targetValue: 1, participantId: null, reward: null });
+
+    const pendingBefore = await db.syncQueue.count();
+    await syncEngine.flush();
+    expect(await db.syncQueue.count()).toBe(pendingBefore);
+    expect(upsert).not.toHaveBeenCalled();
+
+    vi.stubGlobal("navigator", { onLine: true });
+    await syncEngine.flush({ immediate: true });
+
+    // 1 séjour + 1 participant + 25 boissons système + 10 verres + 3 eaux + 1 challenge.
+    // Les deux modifications et la suppression remplacent leur opération par clé.
+    expect(pendingBefore).toBe(41);
+    expect(await db.syncQueue.count()).toBe(0);
+    const pushedKeys = upsert.mock.calls.map(([table, payload]) => `${table}:${(payload as { id: string }).id}`);
+    expect(new Set(pushedKeys).size).toBe(pushedKeys.length);
+    expect((await db.drinkEntries.where("tripId").equals(tripId).filter((entry) => !entry.deletedAt).count())).toBe(9);
+    expect((await db.waterEntries.where("tripId").equals(tripId).filter((entry) => !entry.deletedAt).count())).toBe(3);
+    expect(await db.challenges.where("tripId").equals(tripId).count()).toBe(1);
+  });
+});
+
+describe("conflits multi-appareils", () => {
+  it("fait gagner une suppression distante plus récente sur une modification locale", async () => {
+    const tripId = await tripWithQueuedRound();
+    await syncEngine.flush({ immediate: true });
+    const entry = (await db.drinkEntries.where("tripId").equals(tripId).first())!;
+    const local = { ...entry, updatedAt: "2026-09-07T22:00:00.000Z", deletedAt: null };
+    const remote = { ...local, updatedAt: "2026-09-07T22:00:01.000Z", deletedAt: "2026-09-07T22:00:01.000Z" };
+    await db.drinkEntries.put(local);
+    await db.syncQueue.put(queueOperation("drinkEntry", local, local.updatedAt));
+    pulledRows.set("drink_entries", [toRemote("drinkEntry", remote)]);
+
+    await syncEngine.pullTrip(tripId);
+
+    expect((await db.drinkEntries.get(entry.id))?.deletedAt).toBe(remote.deletedAt);
+    expect(await db.syncQueue.get(`drinkEntry:${entry.id}`)).toBeUndefined();
+  });
+
+  it("préserve une modification locale plus récente qu’une autre modification distante", async () => {
+    const tripId = await tripWithQueuedRound();
+    await syncEngine.flush({ immediate: true });
+    const entry = (await db.drinkEntries.where("tripId").equals(tripId).first())!;
+    const drinks = await db.drinks.where("tripId").equals(tripId).toArray();
+    const olderDrink = drinks.find((drink) => drink.id !== entry.drinkId)!;
+    const remote = { ...entry, drinkId: olderDrink.id, updatedAt: "2026-09-07T22:00:00.000Z" };
+    const local = { ...entry, updatedAt: "2026-09-07T22:00:01.000Z" };
+    await db.drinkEntries.put(local);
+    await db.syncQueue.put(queueOperation("drinkEntry", local, local.updatedAt));
+    pulledRows.set("drink_entries", [toRemote("drinkEntry", remote)]);
+
+    await syncEngine.pullTrip(tripId);
+
+    expect((await db.drinkEntries.get(entry.id))?.drinkId).toBe(local.drinkId);
+    expect(await db.syncQueue.get(`drinkEntry:${entry.id}`)).toBeDefined();
+  });
+
+  it("accepte la ligne serveur à timestamp égal et supprime la variante locale en attente", async () => {
+    const tripId = await tripWithQueuedRound();
+    await syncEngine.flush({ immediate: true });
+    const entry = (await db.drinkEntries.where("tripId").equals(tripId).first())!;
+    const updatedAt = "2026-09-07T22:00:00.000Z";
+    const local = { ...entry, updatedAt, deletedAt: null };
+    const remote = { ...local, deletedAt: updatedAt };
+    await db.drinkEntries.put(local);
+    await db.syncQueue.put(queueOperation("drinkEntry", local, updatedAt));
+    pulledRows.set("drink_entries", [toRemote("drinkEntry", remote)]);
+
+    await syncEngine.pullTrip(tripId);
+
+    expect((await db.drinkEntries.get(entry.id))?.deletedAt).toBe(updatedAt);
+    expect(await db.syncQueue.get(`drinkEntry:${entry.id}`)).toBeUndefined();
   });
 });

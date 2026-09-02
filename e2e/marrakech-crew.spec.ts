@@ -44,6 +44,32 @@ test("une consommation hors ligne survit au rechargement", async ({ page, contex
   await expect(page.getByText("Romain · Mojito").first()).toBeVisible();
 });
 
+test("toutes les pages principales démarrent hors ligne depuis l’app-shell précaché", async ({ page, context }) => {
+  test.setTimeout(120_000);
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  const cacheState = await page.evaluate(async () => ({
+    keys: await caches.keys(),
+    routes: await Promise.all(["/", "/journal", "/alcoolemie", "/stats", "/hall-of-fame", "/challenges", "/recaps"]
+      .map(async (route) => Boolean(await caches.match(route)))),
+  }));
+  expect(cacheState.keys).toContain("marrakech-crew-v6");
+  expect(cacheState.routes.every(Boolean)).toBe(true);
+
+  await context.setOffline(true);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Pour qui ?" })).toBeVisible({ timeout: 15_000 });
+  for (const [link, heading] of [["Journal", "Journal"], ["Alcoolémie", "Alcoolémie estimée"], ["Stats", "Stats"], ["Bilan", "Hall of Fame"]] as const) {
+    await page.getByRole("link", { name: link, exact: true }).click();
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("main")).not.toBeEmpty();
+  }
+  await page.getByRole("link", { name: "Challenges", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Challenges", exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("link", { name: "Retour au Bilan" }).click();
+  await page.getByRole("link", { name: "Récaps", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Récaps", exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
 test("modifie puis supprime une consommation", async ({ page }) => {
   await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
   await page.getByRole("link", { name: "Journal" }).click();
@@ -170,7 +196,7 @@ test("la synchronisation Supabase rejoue la queue après reconnexion", async ({ 
   await context.setOffline(true);
   await page.getByRole("button", { name: "Ajouter un Mojito aux participants sélectionnés" }).click();
   await context.setOffline(false);
-  await expect(page.getByRole("button", { name: /Synchronisé/ })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: /Synchronisation : Tout est synchronisé/i })).toBeVisible({ timeout: 20_000 });
 });
 
 test("configure un poids, ajoute deux whiskys et suit l’alcoolémie estimée", async ({ page, context }) => {

@@ -1,15 +1,17 @@
 -- Réparation de schéma, idempotente ---------------------------------------
 --
 -- Une base migrée à la main peut avoir perdu des fonctions utilitaires posées
--- par les premières migrations : l'application de 202608270006 a échoué sur
+-- par les premières migrations : l'application de 202608270006 a pu échouer sur
 -- « reject_stale_entity_update() does not exist ».
 --
--- Ce fichier redéfinit uniquement les helpers dont 0006 dépend. Il ne crée
+-- Ce fichier redéfinit uniquement les helpers communs. Il ne crée
 -- aucune table, ne touche à aucune donnée, ne modifie aucune migration
 -- existante, et peut être rejoué autant de fois que nécessaire — y compris sur
 -- une base parfaitement à jour, où il ne changera rien.
 --
--- À EXÉCUTER AVANT 202608270006 (son nom la place déjà juste avant).
+-- Son nom est volontairement un timestamp numérique reconnu par la CLI.
+-- La migration 0006 redéfinit au préalable les helpers dont elle dépend ; ce
+-- filet idempotent vérifie ensuite le jeu complet, notamment `is_trip_owner`.
 
 -- Refuse une écriture plus ancienne que la ligne déjà en base : c'est ce qui
 -- protège la synchronisation quand deux téléphones poussent le même objet.

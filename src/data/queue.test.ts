@@ -12,6 +12,7 @@ describe("offline sync helpers", () => {
   it("fusionne seulement une version distante plus récente", () => {
     expect(isRemoteNewer("2026-01-01T01:00:00Z", "2026-01-01T02:00:00Z")).toBe(true);
     expect(isRemoteNewer("2026-01-01T02:00:00Z", "2026-01-01T01:00:00Z")).toBe(false);
+    expect(isRemoteNewer("2026-01-01T02:00:00Z", "2026-01-01T02:00:00Z")).toBe(true);
   });
 
   it("plafonne le backoff à une minute", () => {

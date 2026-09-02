@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { OfflineLink as Link } from "@/components/pwa/offline-link";
 import { Award, Check, ChevronLeft, CirclePlus, Dices, Droplets, Flag, Sparkles, Target, Trash2, Users } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useToast } from "@/components/providers/toast-provider";

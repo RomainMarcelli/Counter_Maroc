@@ -163,6 +163,22 @@ describe("calculateParticipantBacStats", () => {
     expect(stats.dailyPeaks[0].gPerL).toBeGreaterThan(stats.dailyPeaks[1].gPerL);
   });
 
+  it("rattache le pic de 03:00 à la journée de voyage commencée la veille à 08:00", () => {
+    const stats = calculateParticipantBacStats({
+      profile: profile(),
+      events: [
+        { consumedAt: "2026-09-12T00:30:00.000Z", pureAlcoholGrams: whisky },
+        { consumedAt: "2026-09-12T01:30:00.000Z", pureAlcoholGrams: whisky },
+      ],
+      now: "2026-09-12T03:00:00.000Z",
+      timezone: "UTC",
+    });
+
+    expect(stats.dailyPeaks).toHaveLength(1);
+    expect(stats.dailyPeaks[0].date).toBe("2026-09-11");
+    expect(Date.parse(stats.dailyPeaks[0].at)).toBeGreaterThanOrEqual(Date.parse("2026-09-12T01:30:00.000Z"));
+  });
+
   it("reste vide et à zéro sans consommation", () => {
     const stats = calculateParticipantBacStats({ profile: profile(), events: [], now: at(23), timezone });
     expect(stats.current.estimatedGPerL).toBe(0);

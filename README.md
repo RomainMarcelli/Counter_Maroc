@@ -45,7 +45,7 @@ supabase start
 supabase db reset
 ```
 
-Les migrations créent les tables, index, politiques RLS, les fonctions sécurisées de création et de jonction d’un séjour, la publication Realtime et le bucket public `profile-photos` protégé en écriture par les membres du séjour. Voir [docs/DATABASE.md](docs/DATABASE.md) et [docs/AUTH.md](docs/AUTH.md).
+Les migrations créent les tables, index, politiques RLS, les fonctions sécurisées de création et de jonction d’un séjour, la publication Realtime et les buckets privés `profile-photos` et `trip-photos`. Voir [docs/DATABASE.md](docs/DATABASE.md) et [docs/AUTH.md](docs/AUTH.md).
 
 Dans le Dashboard Supabase :
 
@@ -99,6 +99,7 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run test
+npm run test:migrations
 npm run test:e2e
 npm run build
 npm run start
@@ -110,10 +111,12 @@ Deux suites supplémentaires s’exécutent contre un vrai projet Supabase migr�
 
 ```bash
 SUPABASE_RLS_TEST=1 npm run test:rls                   # policies : membre, intrus, séjour voisin
-SUPABASE_E2E=1 npx playwright test --project=Comptes   # deux comptes, deux navigateurs
+SUPABASE_E2E=1 npx playwright test --project=Comptes   # jusqu’à quatre comptes et quatre navigateurs
 ```
 
-Chacune crée ses comptes et son séjour de test, puis les supprime à la fin.
+Chacune crée ses comptes, séjours et objets Storage de test, puis les supprime à la fin. Le workflow GitHub Actions **CI** exécute les contrôles autonomes à chaque push/PR. Le workflow manuel **Supabase integration** peut reconstruire la base locale depuis zéro ou cibler un projet de test distant configuré par secrets.
+
+Pour la cible distante du workflow manuel, configurer uniquement les secrets GitHub `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` et `SUPABASE_SECRET_KEY`. Cette dernière doit rester réservée à GitHub Actions et ne doit jamais porter le préfixe `NEXT_PUBLIC_`.
 
 ## Sur iPhone
 
@@ -140,8 +143,11 @@ fonds verts, un conteneur `.tint-neutral` ramène toute sa sous-arborescence au 
 1. Lancer un build de production avec `npm run build && npm run start`.
 2. Ouvrir l’application une fois en ligne et attendre l’activation du service worker.
 3. Dans DevTools > Application, vérifier Manifest et Service Workers.
-4. Passer Network sur Offline, recharger, ajouter un verre et vérifier le Journal.
-5. Revenir en ligne : l’indicateur passe des actions en attente à **Synchronisé** si Supabase est configuré.
+4. Passer Network sur Offline et ouvrir successivement Rapide, Journal, Alcoolémie, Stats, Bilan, Challenges et Récaps : aucune page ne doit être blanche.
+5. Ajouter un verre hors ligne, recharger et vérifier le Journal.
+6. Revenir en ligne : l’indicateur passe des actions en attente à **Tout est synchronisé** si Supabase est configuré.
+
+Après une mise à jour de la PWA installée : ouvrir l’app en ligne, la remettre brièvement en arrière-plan puis au premier plan, et attendre son rechargement automatique. Dans DevTools, un seul cache `marrakech-crew-v6` doit subsister. Refaire ensuite le parcours hors ligne ci-dessus ; si un chunk du nouveau build n’a pas pu être précaché, l’ancien service worker reste actif au lieu de livrer une version incomplète.
 
 Sur iPhone : Safari > Partager > **Sur l’écran d’accueil**. Sur Android : menu du navigateur > **Installer l’application**. Le service worker met en cache la coquille et les assets ; les données métier restent dans IndexedDB.
 

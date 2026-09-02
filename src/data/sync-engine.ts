@@ -38,7 +38,10 @@ async function mergeRemote(entityType: EntityType, row: Record<string, unknown>)
   const local = await localEntity(entityType, remote.id);
   if (!isRemoteNewer(local?.updatedAt, remote.updatedAt)) return;
   const queued = await db.syncQueue.get(`${entityType}:${remote.id}`);
-  if (queued && !isRemoteNewer(queued.updatedAt, remote.updatedAt)) return;
+  // Le timestamp pertinent est celui de l’entité, pas celui de l’enveloppe de
+  // queue créée quelques millisecondes plus tard.
+  const queuedUpdatedAt = (queued?.payload as EntityBase | undefined)?.updatedAt;
+  if (queued && !isRemoteNewer(queuedUpdatedAt, remote.updatedAt)) return;
   if (entityType === "trip") await db.trips.put(remote as never);
   else if (entityType === "participant") await db.participants.put(remote as never);
   else if (entityType === "drink") await db.drinks.put(remote as never);

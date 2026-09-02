@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Activity, BarChart3, BookOpen, Crown, Zap } from "lucide-react";
 import clsx from "clsx";
+import { OfflineLink } from "@/components/pwa/offline-link";
 
 /**
  * Cinq onglets tiennent sur un iPhone à condition de ne pas gaspiller : icône
@@ -44,7 +44,7 @@ export function BottomNav() {
           const active = pathname === item.href;
           const Icon = item.icon;
           return (
-            <Link
+            <OfflineLink
               key={item.href}
               href={item.href}
               className={clsx(
@@ -56,7 +56,7 @@ export function BottomNav() {
               {active ? <span className="absolute top-1.5 h-1 w-7 rounded-full bg-terra" /> : null}
               <Icon size={21} strokeWidth={active ? 2.8 : 2} />
               <span className="w-full truncate text-center text-[10px] font-extrabold leading-none">{item.label}</span>
-            </Link>
+            </OfflineLink>
           );
         })}
       </div>

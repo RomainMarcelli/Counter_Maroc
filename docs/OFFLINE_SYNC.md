@@ -10,7 +10,7 @@ moteur de synchronisation
 Supabase + PostgreSQL
    ↓ postgres_changes
 Realtime
-   ↓ fusion last-write-wins
+   ↓ fusion latest-write-wins, serveur autoritaire en cas d’égalité
 IndexedDB des autres téléphones
 ```
 
@@ -27,8 +27,9 @@ Un timer est reprogrammé sur la prochaine échéance de retry : aucune nouvelle
 ## Conflits et idempotence
 
 - UUID côté client + clé primaire PostgreSQL + `upsert on conflict (id)` empêchent les doublons.
-- `updated_at` tranche les conflits en last-write-wins.
-- Un trigger PostgreSQL ignore tout `upsert` dont `updated_at` est plus ancien que la ligne déjà présente.
+- `updated_at` tranche les conflits : le timestamp le plus récent gagne.
+- Un trigger PostgreSQL ignore tout `upsert` dont `updated_at` est plus ancien **ou égal** à la ligne présente. À égalité exacte, la première écriture reçue par PostgreSQL gagne.
+- Les clients acceptent la ligne serveur quand son timestamp est égal ; tous convergent donc vers cette première variante au prochain pull/événement Realtime.
 - Une version Realtime plus ancienne que la version locale ou la queue locale n’écrase rien.
 - Une suppression renseigne `deleted_at` et reste synchronisable comme toute autre mise à jour.
 - `created_at` et `consumed_at` ne sont jamais remplacés par une simple chaîne locale.

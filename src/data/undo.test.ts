@@ -48,6 +48,28 @@ describe("annulation rapide", () => {
     expect(await db.drinkEntries.filter((entry) => !entry.deletedAt).count()).toBe(0);
   });
 
+  it("ne fusionne jamais deux tournées lancées presque simultanément", async () => {
+    const tripId = await freshTrip();
+    const participants = ["romain", "lucas", "theo"];
+    const mojitoId = await drinkId(tripId, "Mojito");
+
+    const [first, second] = await Promise.all([
+      addDrinkRound(tripId, participants, mojitoId, "2026-09-12T22:00:00.000Z"),
+      addDrinkRound(tripId, participants, mojitoId, "2026-09-12T22:00:00.001Z"),
+    ]);
+
+    const firstEntries = await db.drinkEntries.bulkGet(first.drinkEntryIds);
+    const secondEntries = await db.drinkEntries.bulkGet(second.drinkEntryIds);
+    const firstRound = firstEntries[0]?.roundId;
+    const secondRound = secondEntries[0]?.roundId;
+    expect(firstRound).toBeTruthy();
+    expect(secondRound).toBeTruthy();
+    expect(firstRound).not.toBe(secondRound);
+    expect(firstEntries.every((entry) => entry?.roundId === firstRound)).toBe(true);
+    expect(secondEntries.every((entry) => entry?.roundId === secondRound)).toBe(true);
+    expect(await db.drinkEntries.filter((entry) => !entry.deletedAt).count()).toBe(6);
+  });
+
   it("annule aussi une tournée d’eau", async () => {
     const tripId = await freshTrip();
     const batch = await addWaterRound(tripId, ["romain", "lucas"]);

@@ -36,6 +36,7 @@ let lucasParticipantId: string;
 let otherTripId: string;
 let otherParticipantId: string;
 const createdUserIds: string[] = [];
+const createdStorageObjects: Array<{ bucket: "profile-photos" | "trip-photos"; path: string }> = [];
 
 async function openAccount(account: { email: string; name: string }): Promise<Session> {
   const { data, error } = await admin.auth.admin.createUser({
@@ -103,6 +104,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ENABLED || !admin) return;
+  for (const object of createdStorageObjects) await admin.storage.from(object.bucket).remove([object.path]);
   if (tripId) await admin.from("trips").delete().eq("id", tripId);
   if (otherTripId) await admin.from("trips").delete().eq("id", otherTripId);
   for (const id of createdUserIds) await admin.auth.admin.deleteUser(id);
@@ -275,5 +277,127 @@ suite("identités", () => {
     const { data, error } = await lucas.client.rpc("my_trips");
     expect(error).toBeNull();
     expect((data ?? []).map((row: { trip_id: string }) => row.trip_id)).toContain(tripId);
+  });
+});
+
+suite("challenges, gages et souvenirs privés", () => {
+  it("autorise la collaboration du séjour et bloque l’intrus ainsi que les références croisées", async () => {
+    const challengeId = uuid();
+    const forfeitId = uuid();
+    const photoId = uuid();
+    const createdAt = "2026-09-12T20:00:00.000Z";
+    const challenge = {
+      id: challengeId, trip_id: tripId, title: "Photo de groupe RLS", description: "Validation collaborative",
+      scope: "group", period: "trip", day_key: null, target_type: "group_photo", target_value: 1,
+      participant_id: null, reward: "Tournée d’eau", status: "active", completed_at: null,
+      created_by: romain.userId, created_at: createdAt, updated_at: createdAt,
+    };
+    expect((await romain.client.from("challenges").insert(challenge)).error).toBeNull();
+
+    const forfeit = {
+      id: forfeitId, trip_id: tripId, title: "Imitation du serveur", description: "",
+      participant_id: lucasParticipantId, challenge_id: challengeId, status: "pending", completed_at: null,
+      created_by: romain.userId, created_at: createdAt, updated_at: createdAt,
+    };
+    expect((await romain.client.from("forfeits").insert(forfeit)).error).toBeNull();
+
+    const photo = {
+      id: photoId, trip_id: tripId, storage_path: `${tripId}/${photoId}.webp`, taken_at: createdAt,
+      uploaded_by: romain.userId, caption: "Riad", created_at: createdAt, updated_at: createdAt,
+    };
+    expect((await romain.client.from("trip_photos").insert(photo)).error).toBeNull();
+
+    const memberRead = await Promise.all([
+      lucas.client.from("challenges").select("id").eq("id", challengeId),
+      lucas.client.from("forfeits").select("id").eq("id", forfeitId),
+      lucas.client.from("trip_photos").select("id").eq("id", photoId),
+    ]);
+    expect(memberRead.map((result) => result.error)).toEqual([null, null, null]);
+    expect(memberRead.map((result) => result.data?.length)).toEqual([1, 1, 1]);
+
+    const completed = await lucas.client.from("challenges")
+      .update({ status: "completed", completed_at: "2026-09-12T21:00:00.000Z", updated_at: "2026-09-12T21:00:00.000Z" })
+      .eq("id", challengeId).select("status");
+    expect(completed.error).toBeNull();
+    expect(completed.data).toEqual([{ status: "completed" }]);
+
+    const intruderRead = await Promise.all([
+      intrus.client.from("challenges").select("id").eq("trip_id", tripId),
+      intrus.client.from("forfeits").select("id").eq("trip_id", tripId),
+      intrus.client.from("trip_photos").select("id").eq("trip_id", tripId),
+    ]);
+    expect(intruderRead.map((result) => result.data)).toEqual([[], [], []]);
+
+    const forbiddenInsert = await intrus.client.from("challenges").insert({
+      ...challenge, id: uuid(), title: "Intrusion", created_by: intrus.userId,
+    });
+    expect(forbiddenInsert.error?.code).toBe("42501");
+
+    const crossTripParticipant = await romain.client.from("forfeits").insert({
+      ...forfeit, id: uuid(), challenge_id: null, participant_id: otherParticipantId,
+    });
+    expect(crossTripParticipant.error?.code).toBe("42501");
+
+    const otherChallengeId = uuid();
+    expect((await intrus.client.from("challenges").insert({
+      ...challenge, id: otherChallengeId, trip_id: otherTripId, title: "Défi voisin", created_by: intrus.userId,
+    })).error).toBeNull();
+    const crossTripChallenge = await romain.client.from("forfeits").insert({
+      ...forfeit, id: uuid(), participant_id: null, challenge_id: otherChallengeId,
+    });
+    expect(crossTripChallenge.error?.code).toBe("42501");
+
+    const crossTripPhotoPath = await romain.client.from("trip_photos").insert({
+      ...photo, id: uuid(), storage_path: `${otherTripId}/${uuid()}.webp`,
+    });
+    expect(crossTripPhotoPath.error?.code).toBe("42501");
+
+    const crossTripUpdate = await lucas.client.from("forfeits")
+      .update({ participant_id: otherParticipantId, updated_at: "2026-09-12T22:00:00.000Z" })
+      .eq("id", forfeitId).select("id");
+    expect(crossTripUpdate.error?.code).toBe("42501");
+
+    const hiddenUpdate = await intrus.client.from("challenges").update({ title: "Piraté" }).eq("id", challengeId).select("id");
+    const hiddenDelete = await intrus.client.from("trip_photos").delete().eq("id", photoId).select("id");
+    expect(hiddenUpdate.data).toEqual([]);
+    expect(hiddenDelete.data).toEqual([]);
+    expect((await lucas.client.from("trip_photos").select("id").eq("id", photoId)).data).toEqual([{ id: photoId }]);
+  });
+
+  it("garde les deux buckets privés entre membres et hors de portée d’un autre séjour", async () => {
+    for (const bucket of ["profile-photos", "trip-photos"] as const) {
+      const path = `${tripId}/rls-${bucket}-${uuid()}.webp`;
+      createdStorageObjects.push({ bucket, path });
+      const upload = await romain.client.storage.from(bucket).upload(path, new Blob([`private-${bucket}`], { type: "image/webp" }));
+      expect(upload.error).toBeNull();
+
+      const memberDownload = await lucas.client.storage.from(bucket).download(path);
+      expect(memberDownload.error).toBeNull();
+      expect(await memberDownload.data?.text()).toBe(`private-${bucket}`);
+
+      const memberUpdate = await lucas.client.storage.from(bucket)
+        .upload(path, new Blob([`updated-${bucket}`], { type: "image/webp" }), { upsert: true });
+      expect(memberUpdate.error).toBeNull();
+
+      const intruderDownload = await intrus.client.storage.from(bucket).download(path);
+      expect(intruderDownload.error).not.toBeNull();
+      const intruderSignature = await intrus.client.storage.from(bucket).createSignedUrl(path, 60);
+      expect(intruderSignature.error).not.toBeNull();
+
+      const intruderUpload = await intrus.client.storage.from(bucket)
+        .upload(`${tripId}/intrusion-${uuid()}.webp`, new Blob(["intrusion"], { type: "image/webp" }));
+      expect(intruderUpload.error).not.toBeNull();
+
+      const crossTripUpload = await romain.client.storage.from(bucket)
+        .upload(`${otherTripId}/croisement-${uuid()}.webp`, new Blob(["croisement"], { type: "image/webp" }));
+      expect(crossTripUpload.error).not.toBeNull();
+
+      await intrus.client.storage.from(bucket).remove([path]);
+      expect((await lucas.client.storage.from(bucket).download(path)).error).toBeNull();
+
+      expect((await lucas.client.storage.from(bucket).remove([path])).error).toBeNull();
+      createdStorageObjects.pop();
+      expect((await romain.client.storage.from(bucket).download(path)).error).not.toBeNull();
+    }
   });
 });

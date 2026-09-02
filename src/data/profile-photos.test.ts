@@ -1,23 +1,23 @@
 // @vitest-environment jsdom
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Participant } from "@/domain/types";
+import type { Participant, TripPhoto } from "@/domain/types";
 
 const mocks = vi.hoisted(() => ({
-  upload: vi.fn(), remove: vi.fn(), updateParticipant: vi.fn(),
+  upload: vi.fn(), remove: vi.fn(), createSignedUrl: vi.fn(), updateParticipant: vi.fn(), addTripPhoto: vi.fn(), deleteTripPhoto: vi.fn(),
 }));
 
 vi.mock("./supabase", () => ({
   getSupabase: () => ({
-    storage: { from: () => ({ upload: mocks.upload, remove: mocks.remove, createSignedUrl: vi.fn() }) },
+    storage: { from: () => ({ upload: mocks.upload, remove: mocks.remove, createSignedUrl: mocks.createSignedUrl }) },
     from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { trip_id: "trip" }, error: null }) }) }) }) }),
   }),
 }));
 vi.mock("./auth", () => ({ currentUserId: vi.fn(async () => "user-1") }));
-vi.mock("./repository", () => ({ updateParticipant: mocks.updateParticipant, addTripPhotoFromUpload: vi.fn(), deleteTripPhoto: vi.fn() }));
+vi.mock("./repository", () => ({ updateParticipant: mocks.updateParticipant, addTripPhotoFromUpload: mocks.addTripPhoto, deleteTripPhoto: mocks.deleteTripPhoto }));
 
 import { db } from "./database";
-import { removeParticipantPhoto, uploadParticipantPhoto } from "./profile-photos";
+import { flushPhotoUploads, forgetSignedPhotoUrl, getSignedPhotoUrl, queueMemoryPhoto, removeParticipantPhoto, removeTripPhoto, uploadParticipantPhoto } from "./profile-photos";
 
 const participant: Participant = {
   id: "participant-1", tripId: "11111111-1111-1111-1111-111111111111", name: "Romain", avatarUrl: null,
@@ -27,7 +27,12 @@ const participant: Participant = {
 
 beforeEach(async () => {
   await db.open(); await db.photoUploads.clear(); await db.settings.clear();
-  mocks.upload.mockReset().mockResolvedValue({ error: null }); mocks.remove.mockReset().mockResolvedValue({ error: null }); mocks.updateParticipant.mockReset().mockResolvedValue(undefined);
+  mocks.upload.mockReset().mockResolvedValue({ error: null });
+  mocks.remove.mockReset().mockResolvedValue({ error: null });
+  mocks.createSignedUrl.mockReset().mockResolvedValue({ data: { signedUrl: "https://signed.test/photo-1" }, error: null });
+  mocks.updateParticipant.mockReset().mockResolvedValue(undefined);
+  mocks.addTripPhoto.mockReset().mockResolvedValue(undefined);
+  mocks.deleteTripPhoto.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 3024, height: 4032, close: vi.fn() })));
   const original = document.createElement.bind(document);
   vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
@@ -66,5 +71,50 @@ describe("photos iPhone", () => {
     await removeParticipantPhoto({ ...participant, avatarUrl: "storage:profile-photos/11111111-1111-1111-1111-111111111111/participant-1/avatar.webp" });
     expect(mocks.updateParticipant).toHaveBeenCalledWith(expect.objectContaining({ id: "participant-1" }), { avatarUrl: null });
     expect(mocks.remove).toHaveBeenCalledWith(["11111111-1111-1111-1111-111111111111/participant-1/avatar.webp"]);
+  });
+
+  it("reprend une photo souvenir hors ligne une seule fois après reconnexion", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const result = await queueMemoryPhoto(participant.tripId, new File(["jpeg"], "riad.jpg", { type: "image/jpeg" }), "2026-09-12T22:00:00.000Z");
+    expect(result.status).toBe("queued");
+    expect(await db.photoUploads.count()).toBe(1);
+
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    await flushPhotoUploads();
+    await flushPhotoUploads();
+
+    expect(mocks.upload).toHaveBeenCalledTimes(1);
+    expect(mocks.addTripPhoto).toHaveBeenCalledTimes(1);
+    expect(mocks.addTripPhoto).toHaveBeenCalledWith(expect.objectContaining({ id: result.uploadId, tripId: participant.tripId }));
+    expect(await db.photoUploads.count()).toBe(0);
+  });
+
+  it("redemande une URL signée après invalidation de la précédente", async () => {
+    const path = `${participant.tripId}/souvenir.webp`;
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({ data: { signedUrl: "https://signed.test/expired" }, error: null })
+      .mockResolvedValueOnce({ data: { signedUrl: "https://signed.test/fresh" }, error: null });
+
+    expect(await getSignedPhotoUrl("trip-photos", path)).toBe("https://signed.test/expired");
+    expect(await getSignedPhotoUrl("trip-photos", path)).toBe("https://signed.test/expired");
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(1);
+    forgetSignedPhotoUrl("trip-photos", path);
+    expect(await getSignedPhotoUrl("trip-photos", path)).toBe("https://signed.test/fresh");
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("supprime d’abord la métadonnée du souvenir puis son objet Storage", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const photo: TripPhoto = {
+      id: "photo-1", tripId: participant.tripId, storagePath: `${participant.tripId}/photo-1.webp`,
+      takenAt: "2026-09-12T22:00:00.000Z", uploadedBy: "user-1", caption: null,
+      createdAt: "2026-09-12T22:00:00.000Z", updatedAt: "2026-09-12T22:00:00.000Z", deletedAt: null,
+    };
+
+    await removeTripPhoto(photo);
+
+    expect(mocks.deleteTripPhoto).toHaveBeenCalledWith(photo);
+    expect(mocks.remove).toHaveBeenCalledWith([photo.storagePath]);
+    expect(await db.settings.get("pendingPhotoDeletes")).toBeUndefined();
   });
 });

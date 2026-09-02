@@ -1,9 +1,33 @@
 /* Marrakech Crew: app-shell and runtime cache. IndexedDB remains the data source. */
-const CACHE = "marrakech-crew-v5";
-const SHELL = ["/", "/journal", "/alcoolemie", "/stats", "/hall-of-fame", "/challenges", "/recaps", "/join", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE = "marrakech-crew-v6";
+const ROUTES = ["/", "/journal", "/alcoolemie", "/stats", "/hall-of-fame", "/challenges", "/recaps", "/join"];
+const STATIC_SHELL = ["/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+
+function staticAssetsFrom(html) {
+  const matches = html.matchAll(/(?:src|href)=["']([^"']+)["']/g);
+  return [...matches]
+    .map((match) => new URL(match[1], self.location.origin))
+    .filter((url) => url.origin === self.location.origin && url.pathname.startsWith("/_next/static/"))
+    .map((url) => url.href);
+}
+
+async function precacheShell() {
+  const cache = await caches.open(CACHE);
+  await cache.addAll(STATIC_SHELL);
+  const assets = new Set();
+  await Promise.all(ROUTES.map(async (route) => {
+    const response = await fetch(route, { cache: "reload", credentials: "same-origin" });
+    if (!response.ok) throw new Error(`Impossible de précacher ${route} (${response.status})`);
+    await cache.put(route, response.clone());
+    for (const asset of staticAssetsFrom(await response.text())) assets.add(asset);
+  }));
+  await Promise.all([...assets].map((asset) => cache.add(asset)));
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  // L’ancienne version reste active si un chunk du nouveau build ne peut pas être
+  // téléchargé : on ne remplace jamais un cache utilisable par une coquille vide.
+  event.waitUntil(precacheShell().then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
@@ -19,9 +43,9 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then((response) => {
       const copy = response.clone();
-      void caches.open(CACHE).then((cache) => cache.put(request, copy));
+      void caches.open(CACHE).then((cache) => cache.put(url.pathname, copy));
       return response;
-    }).catch(async () => (await caches.match(request)) || (await caches.match("/"))));
+    }).catch(async () => (await caches.match(request)) || (await caches.match(url.pathname)) || (await caches.match("/"))));
     return;
   }
 

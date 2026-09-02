@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { OfflineLink as Link } from "@/components/pwa/offline-link";
 import { BarChart3, CalendarDays, Clock3, Download, Droplets, Flame, Moon, Share2, Shapes, Target, Trophy } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
 import { useBac } from "@/components/providers/bac-provider";

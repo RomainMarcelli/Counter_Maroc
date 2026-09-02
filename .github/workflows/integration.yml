@@ -1,0 +1,85 @@
+name: Supabase integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Base à tester
+        required: true
+        default: local
+        type: choice
+        options: [local, remote]
+
+concurrency:
+  group: supabase-integration-${{ github.ref }}-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  local:
+    if: inputs.target == 'local'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.116.0
+      - name: Rejouer toutes les migrations depuis zéro
+        run: |
+          supabase start
+          supabase db reset
+          source <(supabase status -o env)
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SECRET_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+      - name: Tester les policies réelles
+        run: npm run test:rls
+        env:
+          SUPABASE_RLS_TEST: "1"
+      - run: npx playwright install --with-deps chromium
+      - name: Tester l’app-shell hors ligne
+        run: npx playwright test e2e/marrakech-crew.spec.ts --project="Mobile Chrome" --grep="toutes les pages principales"
+      - name: Tester les comptes réels
+        run: npx playwright test e2e/comptes.spec.ts --project=Comptes
+        env:
+          SUPABASE_E2E: "1"
+
+  remote:
+    if: inputs.target == 'remote'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Vérifier les secrets du projet de test
+        shell: bash
+        run: |
+          test -n "$NEXT_PUBLIC_SUPABASE_URL"
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SECRET_KEY"
+      - name: Tester les policies réelles
+        run: npm run test:rls
+        env:
+          SUPABASE_RLS_TEST: "1"
+      - run: npx playwright install --with-deps chromium
+      - name: Tester l’app-shell hors ligne
+        run: npx playwright test e2e/marrakech-crew.spec.ts --project="Mobile Chrome" --grep="toutes les pages principales"
+      - name: Tester les comptes réels
+        run: npx playwright test e2e/comptes.spec.ts --project=Comptes
+        env:
+          SUPABASE_E2E: "1"

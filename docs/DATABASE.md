@@ -8,9 +8,10 @@
 - `participants` et `drinks` : référentiels extensibles avec soft delete. `participants.user_id` rattache un compte à une personne du séjour ; il reste `null` tant que cette personne n’a pas rejoint.
 - `drink_entries` : verres alcoolisés.
 - `water_entries` : hydratation exclue des classements alcool.
+- `challenges`, `forfeits` et `trip_photos` : défis, gages et métadonnées des souvenirs partagés.
 - `sync_operations` : disponible pour audit/déduplication serveur avancée.
 
-Le bucket Storage public `profile-photos` contient les avatars optimisés. Son arborescence est `trip_id/participant_id/fichier.webp`. Les policies d’écriture vérifient que l’utilisateur authentifié est membre du séjour ; l’URL publique permet ensuite l’affichage direct et la mise en cache sur les téléphones.
+Les buckets Storage `profile-photos` et `trip-photos` sont privés. Le premier suit l’arborescence `trip_id/participant_id/fichier.webp`, le second `trip_id/fichier.webp`. Les policies SELECT/INSERT/UPDATE/DELETE extraient le `trip_id` du chemin et exigent un membership ; l’affichage utilise une URL signée courte, jamais une URL publique permanente.
 
 La seconde migration complète les séjours existants avec une sélection de boissons système sans dupliquer les noms déjà présents. Lors d’une nouvelle création, cette même sélection est d’abord écrite dans IndexedDB pour rester instantanée, puis synchronisée dans `drinks`.
 

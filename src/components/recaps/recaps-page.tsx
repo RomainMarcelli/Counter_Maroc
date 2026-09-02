@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { OfflineLink as Link } from "@/components/pwa/offline-link";
 import { CalendarDays, ChevronLeft, ChevronRight, ImagePlus, Trash2 } from "lucide-react";
 import { useTrip } from "@/components/providers/trip-provider";
 import { listDailyRecaps } from "@/domain/daily-recap";
