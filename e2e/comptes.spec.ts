@@ -118,7 +118,7 @@ test("deux comptes partagent le même séjour et saisissent l’un pour l’autr
 
   await romain.getByRole("button", { name: "Ouvrir les réglages" }).click();
   const settings = romain.getByRole("dialog", { name: "Le séjour" });
-  const shareCode = (await settings.locator("strong").first().innerText()).trim();
+  const shareCode = (await settings.getByTestId("trip-share-code").innerText()).trim();
   await settings.getByRole("button", { name: "Fermer", exact: true }).click();
   expect(shareCode).not.toHaveLength(0);
 
@@ -195,7 +195,7 @@ test("quatre comptes convergent sur une tournée, une correction, une eau, un ch
 
     await romain.getByRole("button", { name: "Ouvrir les réglages" }).click();
     const settings = romain.getByRole("dialog", { name: "Le séjour" });
-    const shareCode = (await settings.locator("strong").first().innerText()).trim();
+    const shareCode = (await settings.getByTestId("trip-share-code").innerText()).trim();
     await settings.getByRole("button", { name: "Fermer", exact: true }).click();
 
     await joinTrip(lucas, "Lucas", crewLucasEmail, shareCode);

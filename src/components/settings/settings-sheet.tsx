@@ -193,7 +193,9 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             <div className="mt-2 flex min-h-14 items-center gap-3 rounded-2xl border border-sand bg-white px-4">
               <span className="min-w-0 flex-1">
                 <span className="block text-[10px] font-black uppercase tracking-wider text-morocco/50">Code du séjour</span>
-                <strong className="block truncate font-display text-lg tracking-wider">{trip.shareCode}</strong>
+                <strong data-testid="trip-share-code" className="block truncate font-display text-lg tracking-wider">
+                  {trip.shareCode}
+                </strong>
               </span>
               <button onClick={() => void copyCode()} className="tap-bump flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-sand px-3 text-xs font-black" aria-label="Copier le code du séjour">
                 {codeCopied ? <Check size={15} /> : <Copy size={15} />}Copier
